@@ -1,0 +1,49 @@
+:root {
+  --ink: #010101;
+  --paper: #ffffff;
+  --cyan: #5cd9f0;
+  --red: #d91a43;
+  --cyan-deep: #167a8f;
+  --red-deep: #b3173a;
+  --gray: #9a9ba1;
+  --cyan-soft: var(--surface);
+  --red-soft: var(--surface);
+  --cyan-deep: var(--fg);
+  --blue: #167a8f;
+  --on-blue: #ffffff;
+  --blue-soft: rgba(92, 217, 240, 0.2);
+
+  --bg: #ffffff;
+  --fg: #010101;
+  --card: #ffffff;
+  --surface: #f8f5f6;
+  --border: #e8e2e4;
+  --muted: #5f6168;
+  --up: var(--fg);
+  --up-fill: var(--fg);
+  --red-text: var(--fg);
+  --down: var(--fg);
+  --focus: #167a8f;
+  --on-red: #ffffff;
+  --on-up: var(--bg);
+}
+
+:root.dark {
+  --red: #fd2b52;
+  --bg: #010101;
+  --fg: #ffffff;
+  --card: #161823;
+  --surface: #1f2232;
+  --border: #2b2f42;
+  --muted: #a3a5ad;
+  --up: var(--fg);
+  --down: var(--fg);
+  --focus: #5cd9f0;
+  --blue: #5cd9f0;
+  --on-blue: #010101;
+  --blue-soft: rgba(92, 217, 240, 0.14);
+  --on-red: #ffffff;
+  --on-up: var(--bg);
+  --up-fill: var(--fg);
+  --red-text: var(--fg);
+}

@@ -1,0 +1,11 @@
+node_modules
+dist
+__pycache__
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.import_linter_cache
+*.egg-info
+.vite
+*.db

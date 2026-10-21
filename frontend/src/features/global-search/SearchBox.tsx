@@ -45,7 +45,7 @@ const toItems = (results: SearchResults | null): Item[] => {
       icon: Clapperboard,
       title: video.caption || 'Video không có mô tả',
       subtitle: video.handle,
-      to: `/channels/${video.channel_id}`,
+      to: `/channels/${video.channel_id}?tab=videos&video=${encodeURIComponent(video.id)}`,
     })),
   ];
 };

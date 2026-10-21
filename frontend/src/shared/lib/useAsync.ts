@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { trackLoad } from './loadTimer';
 
 export function useAsync<T>(load: () => Promise<T>, deps: ReadonlyArray<unknown>) {
   const [data, setData] = useState<T | undefined>(undefined);
@@ -9,6 +10,7 @@ export function useAsync<T>(load: () => Promise<T>, deps: ReadonlyArray<unknown>
   useEffect(() => {
     let active = true;
     setLoading(true);
+    const done = trackLoad();
     load()
       .then((result) => {
         if (!active) return;
@@ -20,9 +22,11 @@ export function useAsync<T>(load: () => Promise<T>, deps: ReadonlyArray<unknown>
       })
       .finally(() => {
         if (active) setLoading(false);
+        done();
       });
     return () => {
       active = false;
+      done();
     };
   }, [...deps, tick]);
 

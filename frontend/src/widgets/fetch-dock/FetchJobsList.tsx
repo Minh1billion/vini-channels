@@ -1,5 +1,4 @@
-import { CheckCircle2, ChevronDown, ChevronUp, Loader2, X, XCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, CheckCircle2, Loader2, X, XCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { FetchJobRecord } from '@/entities/job/types';
 import { useFetchJobs } from '@/features/fetch-jobs/FetchJobsProvider';
@@ -49,39 +48,40 @@ function JobRow({ job, onDismiss }: { job: FetchJobRecord; onDismiss: () => void
   );
 }
 
-export function FetchDock() {
+export function FetchJobsList() {
   const { jobs, dismiss, dismissFinished } = useFetchJobs();
-  const [open, setOpen] = useState(true);
-  if (jobs.length === 0) return null;
   const running = jobs.filter((job) => job.status === 'running').length;
   const hasFinished = running < jobs.length;
 
   return (
-    <section
-      aria-label="Tiến trình lấy dữ liệu"
-      className="fixed bottom-4 right-4 z-50 w-[min(360px,calc(100vw-2rem))] animate-pop-in-up overflow-hidden rounded-card border border-border bg-card shadow-pop"
-    >
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+    <section aria-label="Tiến trình lấy dữ liệu" className="flex min-h-full flex-col">
+      <div className="flex items-center gap-2 px-3 py-2">
         {running > 0 ? <Loader2 className="h-4 w-4 animate-spin text-blue" aria-hidden /> : null}
         <p className="flex-1 text-sm font-bold">
-          {running > 0 ? `Đang lấy dữ liệu (${running})` : 'Lấy dữ liệu đã xong'}
+          {jobs.length === 0
+            ? 'Chưa có tiến trình nào'
+            : running > 0
+              ? `Đang lấy dữ liệu (${running})`
+              : 'Lấy dữ liệu đã xong'}
         </p>
         {hasFinished ? (
           <button type="button" onClick={dismissFinished} className="text-xs text-muted hover:text-fg">
             Xóa đã xong
           </button>
         ) : null}
-        <IconButton label={open ? 'Thu gọn' : 'Mở rộng'} onClick={() => setOpen((value) => !value)}>
-          {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronUp className="h-4 w-4" aria-hidden />}
-        </IconButton>
       </div>
-      {open ? (
-        <ul className="max-h-[50vh] divide-y divide-border overflow-y-auto">
+      {jobs.length > 0 ? (
+        <ul className="max-h-[40vh] divide-y divide-border overflow-y-auto border-t border-border">
           {jobs.map((job) => (
             <JobRow key={job.id} job={job} onDismiss={() => dismiss(job.id)} />
           ))}
         </ul>
-      ) : null}
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 border-t border-border px-6 py-8 text-center text-muted">
+          <Activity className="h-8 w-8 opacity-60" aria-hidden />
+          <p className="text-xs">Thêm kênh hoặc đồng bộ để theo dõi tiến độ tại đây.</p>
+        </div>
+      )}
     </section>
   );
 }

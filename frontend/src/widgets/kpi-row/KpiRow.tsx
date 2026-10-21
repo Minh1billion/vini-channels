@@ -31,8 +31,8 @@ export function KpiRow({ items }: { items?: Kpi[] }) {
               {kpi ? (
                 <>
                   <span className="flex items-center gap-2 text-[13px] text-muted">
-                    <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full bg-blue text-on-blue">
-                      <Icon className="h-3.5 w-3.5" />
+                    <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-red bg-blue text-on-blue">
+                      <Icon className="h-3.5 w-3.5" strokeWidth={2.75} />
                     </span>
                     {kpi.label}
                   </span>

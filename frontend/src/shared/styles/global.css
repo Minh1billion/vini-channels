@@ -33,6 +33,26 @@
     font: inherit;
     color: inherit;
   }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    transition: background-color 250ms ease, color 250ms ease;
+  }
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  label,
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'] {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 180ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
   ::selection {
     background: var(--cyan);
     color: var(--ink);
@@ -40,6 +60,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
   *,
   *::before,
   *::after {

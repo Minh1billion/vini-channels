@@ -1,6 +1,6 @@
-import { Activity, ArrowLeft, Clapperboard, ExternalLink, LineChart, RefreshCw, TrendingUp } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Activity, ArrowLeft, Check, Clapperboard, Copy, ExternalLink, LineChart, RefreshCw, TrendingUp } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { channelFacts } from '@/entities/analytics/insights';
 import type { VideoGrowth, VideoRecord, VideoSort } from '@/entities/analytics/types';
 import { changeRatio, signedCount, signedPercent, type Kpi } from '@/entities/analytics/kpis';
@@ -100,16 +100,19 @@ const HEATMAP_DAYS = 365;
 
 export function ChannelDetailPage() {
   const { id = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const targetVideoId = searchParams.get('video');
   const { can } = useAuth();
   const canReadSync = can('sync:read');
   const canSync = can('sync:write');
-  const [period, setPeriod] = useState<Period>(lastDays(30));
+  const [period, setPeriod] = useState<Period>(targetVideoId ? { kind: 'all' } : lastDays(30));
   const [metric, setMetric] = useState<MetricId>('followers');
   const [mode, setMode] = useState<TrendMode>('total');
-  const [tab, setTab] = useState<TabId>('state');
+  const [tab, setTab] = useState<TabId>(targetVideoId ? 'videos' : 'state');
   const [topSort, setTopSort] = useState<VideoSort>('views');
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const periodId = periodKey(period);
 
   const channel = useAsync(() => channelsApi.get(id), [id]);
@@ -128,10 +131,28 @@ export function ChannelDetailPage() {
     [id, periodId],
   );
   const facts = useMemo(() => (videosAll.data ? channelFacts(videosAll.data.items) : null), [videosAll.data]);
+  const targetVideo = useMemo(
+    () => (targetVideoId ? videosAll.data?.items.find((item) => item.id === targetVideoId) ?? null : null),
+    [targetVideoId, videosAll.data],
+  );
+  const targetRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (tab === 'videos' && targetVideo) targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [tab, targetVideo]);
   const runs = useAsync(
     () => (canReadSync ? syncApi.runs({ channel_id: id, limit: 10 }) : Promise.resolve([])),
     [id, canReadSync],
   );
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/channels/${id}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
 
   const reloadAll = () => {
     channel.reload();
@@ -258,6 +279,10 @@ export function ChannelDetailPage() {
         actions={
           record ? (
             <>
+              <Button variant="secondary" onClick={copyLink}>
+                {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+                {copied ? 'Đã sao chép' : 'Sao chép liên kết'}
+              </Button>
               <a href={`https://www.tiktok.com/@${record.handle}`} target="_blank" rel="noreferrer">
                 <Button variant="secondary">
                   <ExternalLink className="h-4 w-4" aria-hidden />
@@ -280,6 +305,12 @@ export function ChannelDetailPage() {
           <ChannelAvatar name={record.display_name || record.handle} tone={toneFor(record.id)} src={record.avatar_url} size={32} />
           <span className="font-mono">@{record.handle}</span>
           <StatusBadge status={record.status} />
+          <Link to={`/channels?partner_id=${record.partner_id}`} className="text-blue underline-offset-4 hover:underline">
+            Kênh cùng đối tác
+          </Link>
+          <Link to={`/videos?channel_id=${record.id}`} className="text-blue underline-offset-4 hover:underline">
+            Tất cả video
+          </Link>
         </div>
       ) : (
         <Skeleton className="mb-5 h-8 w-64" />
@@ -482,6 +513,15 @@ export function ChannelDetailPage() {
 
         {tab === 'videos' ? (
           <div role="tabpanel" id="panel-videos" aria-labelledby="tab-videos" className="flex flex-col gap-6">
+            {targetVideo ? (
+              <section ref={targetRef} aria-label="Video được tìm thấy" className="animate-rise">
+                <h2 className="mb-3 text-base font-bold">Video bạn đã tìm</h2>
+                <div className="max-w-[220px] rounded-card ring-2 ring-blue ring-offset-2 ring-offset-bg">
+                  <VideoGrid videos={[targetVideo]} single />
+                </div>
+              </section>
+            ) : null}
+
             <section>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-base font-bold">Video nổi bật</h2>
@@ -492,7 +532,7 @@ export function ChannelDetailPage() {
                       {item.label}
                     </Chip>
                   ))}
-                  <Link to="/videos" className="ml-2 text-sm font-medium text-blue underline-offset-4 hover:underline hover:decoration-blue">
+                  <Link to={`/videos?channel_id=${id}`} className="ml-2 text-sm font-medium text-blue underline-offset-4 hover:underline hover:decoration-blue">
                     Xem tất cả video
                   </Link>
                 </div>

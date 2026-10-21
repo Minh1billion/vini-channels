@@ -89,12 +89,12 @@ export function GettingStarted({ data }: { data?: DashboardData }) {
                 <span
                   aria-hidden
                   className={cn(
-                    'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[13px] font-medium',
-                    step.done ? 'border-transparent bg-blue text-on-blue' : 'border-border',
-                    current && !step.done && 'border-transparent bg-blue text-on-blue',
+                    'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-[13px] font-bold',
+                    step.done ? 'border-red bg-blue text-on-blue' : 'border-border',
+                    current && !step.done && 'border-red bg-blue text-on-blue',
                   )}
                 >
-                  {step.done ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                  {step.done ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : index + 1}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className={cn('block text-sm font-bold', step.done && 'text-muted line-through')}>{step.title}</span>
@@ -103,8 +103,8 @@ export function GettingStarted({ data }: { data?: DashboardData }) {
                 {step.done ? (
                   <span className="sr-only">Đã xong</span>
                 ) : current ? (
-                  <span aria-hidden className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue text-on-blue transition-colors group-hover:brightness-95">
-                    <ArrowRight className="h-3.5 w-3.5" />
+                  <span aria-hidden className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-red bg-blue text-on-blue transition-colors group-hover:brightness-95">
+                    <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.75} />
                   </span>
                 ) : (
                   <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-up" aria-hidden />

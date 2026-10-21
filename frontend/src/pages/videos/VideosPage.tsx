@@ -1,5 +1,6 @@
 import { ArrowDownWideNarrow, ArrowUpDown, ArrowUpNarrowWide, AtSign, Search, Clapperboard } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { VideoSort } from '@/entities/analytics/types';
 import { analyticsApi, channelsApi } from '@/shared/api';
 import { RangePicker } from '@/features/period-picker/RangePicker';
@@ -24,7 +25,8 @@ const PAGE_SIZE = 24;
 
 export function VideosPage() {
   const [query, setQuery] = useState('');
-  const [channelId, setChannelId] = useState('');
+  const [params] = useSearchParams();
+  const [channelId, setChannelId] = useState(params.get('channel_id') ?? '');
   const [period, setPeriod] = useState<Period>(lastDays(30));
   const periodId = periodKey(period);
   const [sort, setSort] = useState<VideoSort>('posted');

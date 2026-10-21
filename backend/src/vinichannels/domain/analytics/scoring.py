@@ -3,6 +3,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+import numpy as np
+
 from vinichannels.domain.shared.errors import ValidationError
 
 
@@ -59,11 +61,15 @@ class PerformanceScore:
 
 
 def percentile_rank(value: float, population: Sequence[float]) -> float | None:
-    if not population:
+    if not len(population):
         return None
-    below = sum(1 for item in population if item < value)
-    equal = sum(1 for item in population if item == value)
-    return (below + 0.5 * equal) / len(population)
+    return float(_ranks(np.sort(np.asarray(population, dtype=np.float64)), np.array([value]))[0])
+
+
+def _ranks(sorted_population: np.ndarray, values: np.ndarray) -> np.ndarray:
+    below = np.searchsorted(sorted_population, values, side="left")
+    through = np.searchsorted(sorted_population, values, side="right")
+    return (below + 0.5 * (through - below)) / len(sorted_population)
 
 
 def compute_scores(
@@ -77,13 +83,20 @@ def compute_scores(
             if value is not None:
                 populations[component].append(value)
 
+    sorted_populations = {c: np.sort(np.asarray(v, dtype=np.float64)) for c, v in populations.items()}
+    lookup: dict[ScoreComponent, dict[float, float]] = {}
+    for component, population in sorted_populations.items():
+        if len(population):
+            unique = np.unique(population)
+            lookup[component] = dict(zip(unique.tolist(), _ranks(population, unique).tolist(), strict=True))
+
     result: dict[str, PerformanceScore] = {}
     for key, item in inputs.items():
         ranks: dict[ScoreComponent, float | None] = {}
         weighted = 0.0
         used_weight = 0.0
         for component, value in item.component_values().items():
-            rank = None if value is None else percentile_rank(value, populations[component])
+            rank = None if value is None else lookup[component][float(value)]
             ranks[component] = None if rank is None else rank * 100
             if rank is not None and weight_map[component] > 0:
                 weighted += weight_map[component] * rank

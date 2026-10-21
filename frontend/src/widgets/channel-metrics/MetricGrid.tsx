@@ -325,7 +325,7 @@ function Tooltip({ tip }: { tip: Tip }) {
     >
       <p className="flex items-center gap-2 text-sm font-bold">
         <span aria-hidden className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-red bg-blue text-on-blue">
-          <Glyph className="h-3.5 w-3.5" />
+          <Glyph className="h-3.5 w-3.5" strokeWidth={2.75} />
         </span>
         {item.label}
       </p>
@@ -376,7 +376,7 @@ function Card({ item, explain, onShow, onHide }: CardProps) {
           aria-hidden
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-red bg-blue text-on-blue transition-transform duration-150 group-hover:scale-110"
         >
-          <Glyph className="h-4 w-4" />
+          <Glyph className="h-4 w-4" strokeWidth={2.75} />
         </span>
         <span className="min-w-0 flex-1 text-[13px] leading-[17px] text-muted transition-colors group-hover:text-fg">{item.label}</span>
       </span>

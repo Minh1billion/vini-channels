@@ -1,17 +1,23 @@
 import { Menu as MenuIcon, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { FetchJobsProvider } from '@/features/fetch-jobs/FetchJobsProvider';
 import { GlobalSearchProvider } from '@/features/global-search/GlobalSearchProvider';
+import { VideoSimulatorProvider } from '@/features/video-simulator/VideoSimulatorProvider';
 import { cn } from '@/shared/lib/cn';
-import { BrandMark, ConfirmProvider, IconButton } from '@/shared/ui';
-import { FetchDock } from '@/widgets/fetch-dock/FetchDock';
+import { beginNavigation } from '@/shared/lib/loadTimer';
+import { BrandMark, ConfirmProvider, IconButton, LoadTimeBadge } from '@/shared/ui';
 import { Sidebar } from '@/widgets/sidebar/Sidebar';
+import { UtilBubble } from '@/widgets/util-bubble/UtilBubble';
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const location = useLocation();
+
+  useLayoutEffect(() => {
+    beginNavigation();
+  }, [location.pathname]);
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -30,6 +36,7 @@ export function AppLayout() {
     <GlobalSearchProvider>
     <ConfirmProvider>
     <FetchJobsProvider>
+    <VideoSimulatorProvider>
     <div className="min-h-screen bg-bg text-fg lg:flex">
       <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-bg px-3 lg:hidden">
         <IconButton label="Mở menu" onClick={() => setDrawerOpen(true)}>
@@ -78,8 +85,10 @@ export function AppLayout() {
           </div>
         </div>
       </main>
-      <FetchDock />
+      <LoadTimeBadge className="fixed bottom-7 right-[5.5rem] z-40" />
+      <UtilBubble />
     </div>
+    </VideoSimulatorProvider>
     </FetchJobsProvider>
     </ConfirmProvider>
     </GlobalSearchProvider>

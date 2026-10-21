@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from vinichannels.application.authorization import require
-from vinichannels.application.dto import ChannelMetricsDTO, VideoDTO
+from vinichannels.application.dto import ChannelMetricsDTO, VideoDTO, VideoPageDTO
 from vinichannels.application.ports.clock import Clock
 from vinichannels.application.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
 from vinichannels.application.use_cases.analytics.period import resolve_period
@@ -111,6 +111,20 @@ class ListVideos:
         sort: VideoSort = VideoSort.POSTED,
         descending: bool = True,
     ) -> list[VideoDTO]:
+        page = await self.page(actor, channel_id, spec, limit, 0, search, sort, descending)
+        return page.items
+
+    async def page(
+        self,
+        actor: User,
+        channel_id: str | None,
+        spec: PeriodSpec,
+        limit: int = 50,
+        offset: int = 0,
+        search: str | None = None,
+        sort: VideoSort = VideoSort.POSTED,
+        descending: bool = True,
+    ) -> VideoPageDTO:
         require(actor, Permission.ANALYTICS_READ)
         items: list[VideoDTO] = []
         async with self._uow_factory() as uow:
@@ -126,7 +140,9 @@ class ListVideos:
         if needle:
             items = [i for i in items if needle in i.caption.casefold() or needle in i.handle]
         capped = max(1, min(limit, MAX_VIDEOS))
-        return _ordered(items, sort, descending)[:capped]
+        start = max(0, offset)
+        ordered = _ordered(items, sort, descending)
+        return VideoPageDTO(items=ordered[start : start + capped], total=len(ordered))
 
 
 def _video_dto(handle: str, video: Video, snapshot: VideoSnapshot) -> VideoDTO:

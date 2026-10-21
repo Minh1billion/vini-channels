@@ -1,6 +1,7 @@
 import type {
   ChannelMetrics,
   CompareResult,
+  DailyPosts,
   DailyViews,
   VideoGrowth,
   Overview,
@@ -9,7 +10,7 @@ import type {
   VideoSort,
 } from '@/entities/analytics/types';
 import { periodQuery, type Period } from '@/shared/lib/period';
-import { http } from './http';
+import { http, type Page } from './http';
 
 export type VideoParams = {
   channel_id?: string;
@@ -18,6 +19,7 @@ export type VideoParams = {
   sort?: VideoSort;
   order?: 'asc' | 'desc';
   limit?: number;
+  offset?: number;
 };
 
 export const analyticsApi = {
@@ -28,10 +30,14 @@ export const analyticsApi = {
     http.get<ChannelMetrics>(`/channels/${channelId}/metrics`, periodQuery(period)),
   dailyViews: (channelId: string, period: Period) =>
     http.get<DailyViews[]>(`/channels/${channelId}/daily-views`, periodQuery(period)),
+  postingActivity: (channelId: string, period: Period) =>
+    http.get<DailyPosts[]>(`/channels/${channelId}/posting-activity`, periodQuery(period)),
   videoGrowth: (channelId: string, period: Period) =>
     http.get<VideoGrowth[]>(`/channels/${channelId}/video-growth`, periodQuery(period)),
   trend: (channelId: string, period: Period) =>
     http.get<TrendPoint[]>(`/channels/${channelId}/trend`, periodQuery(period)),
   videos: ({ period, ...params }: VideoParams) =>
     http.get<VideoRecord[]>('/videos', { ...params, ...periodQuery(period) }),
+  videoPage: ({ period, ...params }: VideoParams): Promise<Page<VideoRecord>> =>
+    http.getPage<VideoRecord>('/videos', { ...params, ...periodQuery(period) }),
 };

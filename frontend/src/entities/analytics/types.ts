@@ -41,6 +41,12 @@ export interface MetricsValues {
   average_views: number | null;
   median_views: number | null;
   erv: number | null;
+  erf: number | null;
+  like_rate: number | null;
+  comment_rate: number | null;
+  share_rate: number | null;
+  reach_ratio: number | null;
+  viral_rate: number | null;
   follower_growth: number;
   follower_growth_ratio: number | null;
   posts_per_week: number | null;
@@ -55,6 +61,11 @@ export interface ChannelMetrics {
   previous: MetricsValues;
   erv_change: number | null;
   average_views_change: number | null;
+}
+
+export interface DailyPosts {
+  day: string;
+  count: number;
 }
 
 export interface DailyViews {

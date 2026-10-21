@@ -1,4 +1,7 @@
-.PHONY: backend-migrate backend-scheduler backend-api backend-check backend-test frontend-dev frontend-build up down logs docker-check docker-prod docker-prod-down docker-clean
+.PHONY: backend-vapid backend-migrate backend-scheduler backend-api backend-check backend-test frontend-dev frontend-build up down logs docker-check docker-prod docker-prod-down docker-clean
+
+backend-vapid:
+	cd backend && PYTHONPATH=src python3 -m vinichannels.adapters.outbound.push.keygen
 
 backend-migrate:
 	cd backend && PYTHONPATH=src alembic upgrade head

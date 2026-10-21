@@ -2,6 +2,7 @@ import { Bell } from 'lucide-react';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { NotificationRecord } from '@/entities/notification/types';
+import { usePushNotifications } from '@/features/push-notifications/usePushNotifications';
 import { notificationsApi } from '@/shared/api';
 import { cn } from '@/shared/lib/cn';
 import { relativeTime } from '@/shared/lib/format';
@@ -14,6 +15,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: () => void }) {
   const navigate = useNavigate();
   const notifications = useAsync(() => notificationsApi.list(), []);
   const { reload } = notifications;
+  const push = usePushNotifications();
   const items = notifications.data?.items ?? [];
   const unread = notifications.data?.unread_count ?? 0;
 
@@ -25,7 +27,7 @@ export function NotificationBell({ onNavigate }: { onNavigate: () => void }) {
   const open = async (item: NotificationRecord, close: () => void) => {
     close();
     onNavigate();
-    navigate(`/channels/${item.channel_id}`);
+    navigate(item.channel_id ? `/channels/${item.channel_id}` : '/channels');
     if (!item.read_at) {
       await notificationsApi.markRead(item.id).catch(() => undefined);
       reload();
@@ -104,6 +106,24 @@ export function NotificationBell({ onNavigate }: { onNavigate: () => void }) {
               ))
             )}
           </div>
+          {push.state === 'off' || push.state === 'on' ? (
+            <div className="flex flex-col gap-0.5 border-t border-border px-2.5 py-2">
+              <button
+                type="button"
+                disabled={push.busy}
+                onClick={push.state === 'on' ? push.disable : push.enable}
+                className="self-start text-[13px] font-medium text-blue underline-offset-4 hover:underline hover:decoration-blue disabled:text-muted disabled:no-underline"
+              >
+                {push.state === 'on' ? 'Tắt thông báo đẩy' : 'Bật thông báo đẩy'}
+              </button>
+              {push.error ? <span className="text-xs text-muted">{push.error}</span> : null}
+            </div>
+          ) : null}
+          {push.state === 'denied' ? (
+            <p className="border-t border-border px-2.5 py-2 text-xs text-muted">
+              Trình duyệt đang chặn thông báo đẩy cho trang này.
+            </p>
+          ) : null}
         </div>
       )}
     </Menu>

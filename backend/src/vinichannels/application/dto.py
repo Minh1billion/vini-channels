@@ -212,6 +212,12 @@ class VideoDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class VideoPageDTO:
+    items: list[VideoDTO]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
 class ChannelScoreDTO:
     channel_id: str
     partner_id: str
@@ -315,6 +321,12 @@ class AuditEntryDTO:
 class DailyViewsDTO:
     day: date
     views: int
+
+
+@dataclass(frozen=True, slots=True)
+class DailyPostsDTO:
+    day: date
+    count: int
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,7 +1,8 @@
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 
 from vinichannels.application.authorization import require
 from vinichannels.application.dto import ChannelDTO
@@ -15,7 +16,9 @@ from vinichannels.application.ports.data_provider import (
     ProviderUnavailable,
 )
 from vinichannels.application.ports.security import SecretCipher
+from vinichannels.application.ports.thumbnails import ThumbnailStore
 from vinichannels.application.ports.unit_of_work import UnitOfWorkFactory
+from vinichannels.application.progress import Progress
 from vinichannels.application.use_cases.audit.recording import record
 from vinichannels.application.use_cases.channels.common import (
     load_active_partner,
@@ -23,6 +26,7 @@ from vinichannels.application.use_cases.channels.common import (
 )
 from vinichannels.application.use_cases.syncing.ingest import Sleep, fetch_with_retry, store_data
 from vinichannels.application.use_cases.syncing.providers import effective_config
+from vinichannels.application.use_cases.syncing.thumbnails import mirror_thumbnails
 from vinichannels.domain.audit.entities import AuditAction
 from vinichannels.domain.channels.entities import DEFAULT_TIMEZONE, Channel, ChannelCredential
 from vinichannels.domain.channels.value_objects import Handle
@@ -50,6 +54,7 @@ class RegisterChannelCommand:
     sync_cron: str | None = None
     timezone: str = DEFAULT_TIMEZONE
     token: ChannelToken | None = None
+    history_since: date | None = None
 
 
 class RegisterChannel:
@@ -61,7 +66,9 @@ class RegisterChannel:
         clock: Clock,
         retry: RetryPolicy | None = None,
         sleep: Sleep | None = None,
-        max_videos: int = 30,
+        max_videos: int | None = None,
+        max_pages: int = 100,
+        thumbnails: ThumbnailStore | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._providers = providers
@@ -70,8 +77,12 @@ class RegisterChannel:
         self._retry = retry or RetryPolicy()
         self._sleep = sleep
         self._max_videos = max_videos
+        self._max_pages = max_pages
+        self._thumbnails = thumbnails
 
-    async def execute(self, actor: User, command: RegisterChannelCommand) -> ChannelDTO:
+    async def execute(
+        self, actor: User, command: RegisterChannelCommand, progress: Progress | None = None
+    ) -> ChannelDTO:
         require(actor, Permission.PARTNERS_WRITE)
         require(actor, Permission.SYNC_WRITE)
         key, provider = self._resolve(command.provider)
@@ -79,10 +90,13 @@ class RegisterChannel:
         if spec.requires_channel_token:
             require(actor, Permission.PROVIDERS_WRITE)
         validate_schedule(command.sync_cron, command.timezone)
+        since = self._history_start(command)
         handle = Handle(command.handle)
         credentials = await self._prepare(command, key, handle)
         started = self._clock.now()
-        data = await self._crawl(provider, handle, credentials, spec.label)
+        data = await self._crawl(provider, handle, credentials, spec.label, since, progress)
+        if progress is not None:
+            await progress("Đang lưu dữ liệu", 0, None)
         finished = self._clock.now()
         async with self._uow_factory() as uow:
             if await uow.channels.get_by_handle(handle) is not None:
@@ -180,8 +194,22 @@ class RegisterChannel:
             values["access_token"] = token.access_token.strip()
         return values
 
+    def _history_start(self, command: RegisterChannelCommand) -> datetime | None:
+        if command.history_since is None:
+            return None
+        zone = ZoneInfo(command.timezone)
+        if command.history_since > self._clock.now().astimezone(zone).date():
+            raise ValidationError("Ngày bắt đầu lấy dữ liệu không được ở tương lai")
+        return datetime.combine(command.history_since, time.min, zone)
+
     async def _crawl(
-        self, provider: DataProvider, handle: Handle, credentials: dict[str, str], label: str
+        self,
+        provider: DataProvider,
+        handle: Handle,
+        credentials: dict[str, str],
+        label: str,
+        since: datetime | None,
+        progress: Progress | None,
     ) -> ProviderData:
         request = FetchRequest(
             handle=handle.value,
@@ -189,14 +217,19 @@ class RegisterChannel:
             credentials=credentials,
             max_videos=self._max_videos,
             now=self._clock.now(),
+            since=since,
+            max_pages=self._max_pages,
+            progress=progress,
         )
         try:
             if self._sleep is None:
-                return await fetch_with_retry(provider, request, self._retry)
-            return await fetch_with_retry(provider, request, self._retry, self._sleep)
+                data = await fetch_with_retry(provider, request, self._retry)
+            else:
+                data = await fetch_with_retry(provider, request, self._retry, self._sleep)
         except ProviderError as error:
             raise ChannelUnverified(
                 f"Không crawl được {handle.display} bằng {label}: {error.message}"
             ) from error
         except ProviderUnavailable as error:
             raise ChannelUnverified(f"Nguồn {label} chưa sẵn sàng: {error.message}") from error
+        return await mirror_thumbnails(self._thumbnails, data, progress)

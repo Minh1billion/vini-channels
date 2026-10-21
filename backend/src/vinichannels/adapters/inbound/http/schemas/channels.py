@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,6 +15,7 @@ class ChannelCreateRequest(BaseModel):
     sync_cron: str | None = None
     timezone: str = DEFAULT_TIMEZONE
     token: CredentialRequest | None = None
+    history_since: date | None = None
 
 
 class ChannelUpdateRequest(BaseModel):

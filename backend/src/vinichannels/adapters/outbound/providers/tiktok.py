@@ -34,7 +34,6 @@ _VIDEO_FIELDS = (
     "like_count,comment_count,share_count,view_count"
 )
 _PAGE_SIZE = 20
-_MAX_PAGES = 5
 _TOKEN_CODES = {"access_token_invalid", "scope_not_authorized", "scope_permission_missed"}
 
 
@@ -106,25 +105,40 @@ class TikTokProvider:
             video_count=as_int(user.get("video_count")),
         )
 
-    async def _videos(self, token: str, limit: int) -> list[FetchedVideo]:
+    async def _videos(
+        self, token: str, request: FetchRequest
+    ) -> tuple[list[FetchedVideo], str | None]:
         collected: list[FetchedVideo] = []
         cursor: Any = None
-        for _ in range(_MAX_PAGES):
-            payload: Json = {"max_count": min(_PAGE_SIZE, limit)}
+        for page in range(request.max_pages):
+            remaining = None if request.max_videos is None else request.max_videos - len(collected)
+            payload: Json = {
+                "max_count": _PAGE_SIZE if remaining is None else min(_PAGE_SIZE, remaining)
+            }
             if cursor is not None:
                 payload["cursor"] = cursor
-            body = await self._call(
-                "POST", "/v2/video/list/", token, {"fields": _VIDEO_FIELDS}, payload
-            )
+            try:
+                body = await self._call(
+                    "POST", "/v2/video/list/", token, {"fields": _VIDEO_FIELDS}, payload
+                )
+            except ProviderError as error:
+                if not collected or error.kind is SyncErrorKind.TOKEN_REVOKED:
+                    raise
+                return collected, f"Dừng ở trang {page + 1} do lỗi: {error.message}"
             data = as_obj(body.get("data"))
-            for item in as_list(data.get("videos")):
-                parsed = _video(as_obj(item))
-                if parsed is not None:
-                    collected.append(parsed)
+            fresh = [
+                parsed
+                for item in as_list(data.get("videos"))
+                if (parsed := _video(as_obj(item))) is not None
+            ]
+            wanted = [v for v in fresh if request.since is None or v.posted_at >= request.since]
+            collected.extend(wanted)
             cursor = data.get("cursor")
-            if len(collected) >= limit or not data.get("has_more") or cursor is None:
-                break
-        return collected[:limit]
+            passed_since = request.since is not None and bool(fresh) and not wanted
+            full = request.max_videos is not None and len(collected) >= request.max_videos
+            if full or passed_since or not data.get("has_more") or cursor is None:
+                return collected, None
+        return collected, f"Đã đạt giới hạn {request.max_pages} trang, có thể còn video cũ chưa lấy"
 
     async def fetch(self, request: FetchRequest) -> ProviderData:
         token = request.credentials.get("access_token", "")
@@ -132,7 +146,7 @@ class TikTokProvider:
             raise ProviderUnavailable("Kênh chưa có token TikTok")
         profile = await self._profile(token)
         try:
-            videos = await self._videos(token, request.max_videos)
+            videos, warning = await self._videos(token, request)
         except ProviderError as error:
             if error.kind is SyncErrorKind.TOKEN_REVOKED:
                 raise
@@ -141,7 +155,7 @@ class TikTokProvider:
                 videos=(),
                 warning=f"Không lấy được danh sách video: {error.message}",
             )
-        return ProviderData(profile=profile, videos=tuple(videos))
+        return ProviderData(profile=profile, videos=tuple(videos), warning=warning)
 
 
 class TikTokTokenRefresher:

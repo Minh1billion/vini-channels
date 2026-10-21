@@ -1,7 +1,13 @@
-from datetime import timedelta
+from collections import Counter
+from datetime import timedelta, timezone
 
 from vinichannels.application.authorization import require
-from vinichannels.application.dto import DailyViewsDTO, GrowthPointDTO, VideoGrowthDTO
+from vinichannels.application.dto import (
+    DailyPostsDTO,
+    DailyViewsDTO,
+    GrowthPointDTO,
+    VideoGrowthDTO,
+)
 from vinichannels.application.ports.clock import Clock
 from vinichannels.application.ports.unit_of_work import UnitOfWorkFactory
 from vinichannels.application.use_cases.analytics.period import resolve_period
@@ -32,6 +38,23 @@ class GetChannelDailyViews:
             )
         totals = daily_views(group_by_video(snapshots).values(), period)
         return [DailyViewsDTO(day, views) for day, views in sorted(totals.items())]
+
+
+class GetPostingActivity:
+    def __init__(self, uow_factory: UnitOfWorkFactory, clock: Clock) -> None:
+        self._uow_factory = uow_factory
+        self._clock = clock
+
+    async def execute(self, actor: User, channel_id: str, spec: PeriodSpec) -> list[DailyPostsDTO]:
+        require(actor, Permission.ANALYTICS_READ)
+        async with self._uow_factory() as uow:
+            channel = await load_channel(uow, channel_id)
+            period = await resolve_period(uow, self._clock, spec, [channel.id])
+            since, until = period.bounds()
+            videos = await uow.videos.list_for_channel(channel.id, since, until)
+        zone = timezone(timedelta(minutes=period.offset_minutes))
+        counts = Counter(video.posted_at.astimezone(zone).date() for video in videos)
+        return [DailyPostsDTO(day, count) for day, count in sorted(counts.items())]
 
 
 class GetVideoGrowth:

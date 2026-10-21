@@ -2,14 +2,23 @@ import { useMemo, useState } from 'react';
 import type { Partner } from '@/entities/partner/types';
 import { unavailableReason } from '@/entities/provider/availability';
 import { useAuth } from '@/features/auth/AuthProvider';
-import { channelsApi, providersApi } from '@/shared/api';
+import { useFetchJobs } from '@/features/fetch-jobs/FetchJobsProvider';
+import { providersApi } from '@/shared/api';
 import { errorMessage } from '@/shared/lib/errors';
 import { full } from '@/shared/lib/format';
+import { localDay } from '@/shared/lib/period';
 import { useAsync } from '@/shared/lib/useAsync';
 import { FormDialog, FormSection, OptionCardGroup, SelectField, Skeleton, TextField, type Option } from '@/shared/ui';
 import { ScheduleFields } from './ScheduleFields';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+type HistoryMode = 'all' | 'from';
+
+const HISTORY_OPTIONS: Array<Option<HistoryMode>> = [
+  { value: 'all', label: 'Toàn bộ lịch sử', description: 'Lấy mọi video kênh đã đăng.' },
+  { value: 'from', label: 'Từ một ngày', description: 'Chỉ lấy video đăng từ ngày bạn chọn.' },
+];
 
 interface Props {
   partners: Partner[];
@@ -19,6 +28,7 @@ interface Props {
 
 export function AddChannelDialog({ partners, onClose, onSaved }: Props) {
   const { can } = useAuth();
+  const { startRegister } = useFetchJobs();
   const canManageTokens = can('providers:write');
   const activePartners = partners.filter((partner) => partner.archived_at === null);
   const providers = useAsync(() => providersApi.list(), []);
@@ -32,6 +42,8 @@ export function AddChannelDialog({ partners, onClose, onSaved }: Props) {
   const [accessToken, setAccessToken] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [historyMode, setHistoryMode] = useState<HistoryMode>('all');
+  const [historyFrom, setHistoryFrom] = useState('');
 
   const options = useMemo<Array<Option<string>>>(
     () =>
@@ -56,16 +68,18 @@ export function AddChannelDialog({ partners, onClose, onSaved }: Props) {
 
   const expiry = expiresAt ? new Date(expiresAt) : null;
   const tokenReady = !needsToken || (accessToken.trim() !== '' && expiry !== null && !Number.isNaN(expiry.getTime()));
-  const canSubmit = Boolean(partnerId && handle.trim() && providerKey && tokenReady);
+  const historyReady = historyMode === 'all' || historyFrom !== '';
+  const canSubmit = Boolean(partnerId && handle.trim() && providerKey && tokenReady && historyReady);
 
   const submit = async () => {
-    await channelsApi.create({
+    await startRegister({
       partner_id: partnerId,
       handle: handle.trim(),
       provider: providerKey,
       display_name: displayName.trim(),
       sync_cron: cron.trim() || null,
       timezone: timezone.trim(),
+      history_since: historyMode === 'from' ? historyFrom : null,
       token:
         needsToken && expiry
           ? {
@@ -85,7 +99,7 @@ export function AddChannelDialog({ partners, onClose, onSaved }: Props) {
       size="lg"
       submitLabel="Kiểm tra và thêm kênh"
       pendingLabel="Đang kiểm tra kênh..."
-      pendingNote={`Đang lấy dữ liệu @${handle.trim().replace(/^@/, '')} từ ${provider?.label ?? 'nguồn dữ liệu'}, có thể mất vài chục giây.`}
+      pendingNote={`Đang lấy dữ liệu @${handle.trim().replace(/^@/, '')} từ ${provider?.label ?? 'nguồn dữ liệu'}. ${historyMode === 'all' ? 'Lấy toàn bộ lịch sử nên có thể mất vài phút với kênh nhiều video.' : 'Có thể mất vài chục giây.'}`}
       canSubmit={canSubmit}
       onSubmit={submit}
       onClose={onClose}
@@ -161,6 +175,23 @@ export function AddChannelDialog({ partners, onClose, onSaved }: Props) {
               />
             </div>
           </div>
+        ) : null}
+      </FormSection>
+
+      <FormSection
+        title="Dữ liệu lần đầu"
+        description="Các lần đồng bộ sau chỉ cập nhật video trong khoảng gần đây theo cấu hình hệ thống."
+      >
+        <OptionCardGroup label="Lấy video từ" value={historyMode} options={HISTORY_OPTIONS} onChange={setHistoryMode} />
+        {historyMode === 'from' ? (
+          <TextField
+            label="Ngày bắt đầu"
+            type="date"
+            max={localDay()}
+            value={historyFrom}
+            onChange={(e) => setHistoryFrom(e.target.value)}
+            required
+          />
         ) : null}
       </FormSection>
 

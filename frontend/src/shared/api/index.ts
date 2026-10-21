@@ -11,3 +11,4 @@ export { analyticsApi, type VideoParams } from './analytics';
 export { providersApi, type ProviderUpdateInput, type ChannelTokenInput } from './providers';
 export { notificationsApi } from './notifications';
 export { searchApi } from './search';
+export { jobsApi } from './jobs';

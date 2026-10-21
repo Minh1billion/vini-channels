@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from vinichannels.domain.shared.ids import ChannelId
+from vinichannels.domain.shared.ids import ChannelId, UserId
 from vinichannels.domain.shared.time import require_aware
 
 
@@ -10,6 +10,8 @@ class NotificationKind(StrEnum):
     SYNC_FAILURES = "sync_failures"
     TOKEN_EXPIRING = "token_expiring"
     ENGAGEMENT_DROP = "engagement_drop"
+    JOB_SUCCEEDED = "job_succeeded"
+    JOB_FAILED = "job_failed"
 
 
 @dataclass(slots=True)
@@ -34,3 +36,16 @@ class Notification:
         require_aware(at, "read_at")
         if self.read_at is None:
             self.read_at = at
+
+
+@dataclass(slots=True)
+class PushSubscription:
+    id: str
+    user_id: UserId
+    endpoint: str
+    p256dh: str
+    auth: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        require_aware(self.created_at, "created_at")

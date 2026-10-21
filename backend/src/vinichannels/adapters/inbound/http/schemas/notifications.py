@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NotificationResponse(BaseModel):
@@ -18,3 +18,18 @@ class NotificationResponse(BaseModel):
 class NotificationListResponse(BaseModel):
     items: list[NotificationResponse]
     unread_count: int
+
+
+class PushConfigResponse(BaseModel):
+    enabled: bool
+    public_key: str | None
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=1024)
+    p256dh: str = Field(min_length=1, max_length=128)
+    auth: str = Field(min_length=1, max_length=64)
+
+
+class PushUnsubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=1024)

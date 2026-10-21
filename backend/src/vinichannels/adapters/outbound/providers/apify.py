@@ -23,6 +23,7 @@ from vinichannels.domain.syncing.policies import SyncErrorKind
 from vinichannels.domain.syncing.providers import ProviderKey
 
 DEFAULT_ACTOR = "clockworks/tiktok-scraper"
+UNBOUNDED_RESULTS = 1000
 
 
 def _unavailable(message: str) -> Exception:
@@ -88,7 +89,7 @@ class ApifyProvider:
             {"Authorization": f"Bearer {token}"},
             body={
                 "profiles": [request.handle],
-                "resultsPerPage": request.max_videos,
+                "resultsPerPage": request.max_videos or UNBOUNDED_RESULTS,
                 "shouldDownloadVideos": False,
                 "shouldDownloadCovers": False,
                 "shouldDownloadSubtitles": False,
@@ -99,8 +100,14 @@ class ApifyProvider:
         valid = [item for item in items if as_text(item.get("id")) and item.get("authorMeta")]
         if not valid:
             raise _failure(items)
-        videos = [parsed for item in valid if (parsed := _video(item)) is not None]
+        videos = [
+            parsed
+            for item in valid
+            if (parsed := _video(item)) is not None
+            and (request.since is None or parsed.posted_at >= request.since)
+        ]
+        limit = request.max_videos or UNBOUNDED_RESULTS
         return ProviderData(
             profile=_profile(as_obj(valid[0].get("authorMeta"))),
-            videos=tuple(videos[: request.max_videos]),
+            videos=tuple(videos[:limit]),
         )

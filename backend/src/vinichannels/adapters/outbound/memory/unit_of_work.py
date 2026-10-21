@@ -9,6 +9,7 @@ from vinichannels.adapters.outbound.memory.repositories import (
     MemoryNotificationRepository,
     MemoryPartnerRepository,
     MemoryProviderConfigRepository,
+    MemoryPushSubscriptionRepository,
     MemoryScoringSettingsRepository,
     MemorySnapshotRepository,
     MemoryState,
@@ -36,6 +37,7 @@ class MemoryUnitOfWork:
         self.scoring = MemoryScoringSettingsRepository(self._working)
         self.audit = MemoryAuditLogRepository(self._working)
         self.notifications = MemoryNotificationRepository(self._working)
+        self.push_subscriptions = MemoryPushSubscriptionRepository(self._working)
 
     async def __aenter__(self) -> Self:
         self._working = deepcopy(self._committed)

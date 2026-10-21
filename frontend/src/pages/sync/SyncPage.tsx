@@ -2,12 +2,12 @@ import { RefreshCw, ShieldOff } from 'lucide-react';
 import { useState } from 'react';
 import { ChannelAvatar } from '@/entities/channel/ChannelAvatar';
 import { toneFor } from '@/entities/channel/tone';
-import { sourceLabel } from '@/entities/provider/labels';
 import { SourceTag } from '@/entities/provider/ProviderLogo';
 import { describeCron } from '@/entities/sync/cron';
 import { SyncStatusBadge } from '@/entities/sync/SyncStatusBadge';
 import type { SyncRunRecord, SyncScheduleRecord, SyncStatus } from '@/entities/sync/types';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { useFetchJobs, useOnJobFinished } from '@/features/fetch-jobs/FetchJobsProvider';
 import { syncApi } from '@/shared/api';
 import { dateTime, duration, full, relativeTime, untilTime } from '@/shared/lib/format';
 import { errorMessage } from '@/shared/lib/errors';
@@ -84,7 +84,8 @@ export function SyncPage() {
   const canSync = can('sync:write');
   const [tab, setTab] = useState<TabId>('runs');
   const [status, setStatus] = useState<SyncStatus | ''>('');
-  const [busy, setBusy] = useState<string | null>(null);
+  const { startSync, isSyncing, jobs } = useFetchJobs();
+  const busy = jobs.some((job) => job.status === 'running' && job.kind === 'sync');
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -99,20 +100,16 @@ export function SyncPage() {
     schedules.reload();
   };
 
+  useOnJobFinished(reloadAll);
+
   const syncNow = async (row: SyncScheduleRecord) => {
-    setBusy(row.channel_id);
     setNotice(null);
     setActionError(null);
     try {
-      const run = await syncApi.syncChannel(row.channel_id);
-      const label = `@${row.handle}: ${sourceLabel(run.source)}, ${full(run.items_fetched)} mục`;
-      if (run.status === 'failed') setActionError(`${label}. ${run.error_message ?? 'Đồng bộ thất bại'}`);
-      else setNotice(`Đã đồng bộ ${label}`);
+      await startSync(row.channel_id);
+      setNotice(`Đang đồng bộ @${row.handle} ở nền, bạn có thể rời trang này`);
     } catch (err) {
       setActionError(errorMessage(err));
-    } finally {
-      setBusy(null);
-      reloadAll();
     }
   };
 
@@ -173,9 +170,9 @@ export function SyncPage() {
       header: '',
       align: 'right',
       cell: (r) => (
-        <Button variant="secondary" size="sm" disabled={busy !== null || !r.is_active} onClick={() => syncNow(r)}>
-          <RefreshCw className={busy === r.channel_id ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} aria-hidden />
-          {busy === r.channel_id ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
+        <Button variant="secondary" size="sm" disabled={busy || !r.is_active} onClick={() => syncNow(r)}>
+          <RefreshCw className={isSyncing(r.channel_id) ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} aria-hidden />
+          {isSyncing(r.channel_id) ? 'Đang đồng bộ...' : 'Đồng bộ ngay'}
         </Button>
       ),
     });

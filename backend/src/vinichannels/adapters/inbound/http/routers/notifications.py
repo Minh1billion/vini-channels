@@ -1,11 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 
 from vinichannels.adapters.inbound.http.dependencies import CurrentUser, UseCasesDep
 from vinichannels.adapters.inbound.http.schemas.notifications import (
     NotificationListResponse,
     NotificationResponse,
+    PushConfigResponse,
+    PushSubscribeRequest,
+    PushUnsubscribeRequest,
 )
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -23,6 +26,26 @@ async def list_notifications(
         items=[NotificationResponse.model_validate(item) for item in result.items],
         unread_count=result.unread_count,
     )
+
+
+@router.get("/push/config")
+async def push_config(user: CurrentUser, use_cases: UseCasesDep) -> PushConfigResponse:
+    public_key = use_cases.get_push_config.execute(user)
+    return PushConfigResponse(enabled=public_key is not None, public_key=public_key)
+
+
+@router.post("/push/subscribe", status_code=status.HTTP_204_NO_CONTENT)
+async def push_subscribe(
+    body: PushSubscribeRequest, user: CurrentUser, use_cases: UseCasesDep
+) -> None:
+    await use_cases.subscribe_push.execute(user, body.endpoint, body.p256dh, body.auth)
+
+
+@router.post("/push/unsubscribe", status_code=status.HTTP_204_NO_CONTENT)
+async def push_unsubscribe(
+    body: PushUnsubscribeRequest, user: CurrentUser, use_cases: UseCasesDep
+) -> None:
+    await use_cases.unsubscribe_push.execute(user, body.endpoint)
 
 
 @router.post("/read-all")

@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from vinichannels.application.authorization import require
 from vinichannels.application.dto import SyncRunDTO
@@ -16,10 +16,13 @@ from vinichannels.application.ports.data_provider import (
     ProviderUnavailable,
 )
 from vinichannels.application.ports.security import SecretCipher
+from vinichannels.application.ports.thumbnails import ThumbnailStore
 from vinichannels.application.ports.unit_of_work import UnitOfWork, UnitOfWorkFactory
+from vinichannels.application.progress import Progress
 from vinichannels.application.use_cases.channels.common import load_channel
 from vinichannels.application.use_cases.syncing.ingest import Sleep, fetch_with_retry, store_data
 from vinichannels.application.use_cases.syncing.providers import effective_config
+from vinichannels.application.use_cases.syncing.thumbnails import mirror_thumbnails
 from vinichannels.domain.channels.entities import Channel
 from vinichannels.domain.channels.value_objects import ChannelStatus, ConnectionMode
 from vinichannels.domain.identity.entities import Permission, User
@@ -62,7 +65,10 @@ class SyncChannel:
         clock: Clock,
         retry: RetryPolicy | None = None,
         sleep: Sleep = asyncio.sleep,
-        max_videos: int = 30,
+        max_videos: int | None = 30,
+        lookback_days: int | None = None,
+        max_pages: int = 3,
+        thumbnails: ThumbnailStore | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._providers = providers
@@ -71,21 +77,31 @@ class SyncChannel:
         self._retry = retry or RetryPolicy()
         self._sleep = sleep
         self._max_videos = max_videos
+        self._lookback_days = lookback_days
+        self._max_pages = max_pages
+        self._thumbnails = thumbnails
 
     async def execute(
-        self, actor: User, channel_id: str, trigger: SyncTrigger = SyncTrigger.MANUAL
+        self,
+        actor: User,
+        channel_id: str,
+        trigger: SyncTrigger = SyncTrigger.MANUAL,
+        progress: Progress | None = None,
     ) -> SyncRunDTO:
         require(actor, Permission.SYNC_WRITE)
-        return await self.run(channel_id, trigger)
+        return await self.run(channel_id, trigger, progress=progress)
 
     async def run(
         self,
         channel_id: str,
         trigger: SyncTrigger,
         scheduled_for: datetime | None = None,
+        progress: Progress | None = None,
     ) -> SyncRunDTO:
         job = await self._start(channel_id, trigger, scheduled_for)
-        outcome = await self._collect(job)
+        outcome = await self._collect(job, progress)
+        if progress is not None:
+            await progress("Đang lưu dữ liệu", 0, None)
         return await self._finish(channel_id, job.run_id, outcome)
 
     async def _plan(self, uow: UnitOfWork, channel: Channel) -> tuple[_Attempt, ...]:
@@ -138,19 +154,26 @@ class SyncChannel:
             await uow.commit()
         return _Job(run.id, channel.handle.value, channel.platform_channel_id, attempts)
 
-    async def _collect(self, job: _Job) -> _Outcome:
+    async def _collect(self, job: _Job, progress: Progress | None) -> _Outcome:
         outcome = _Outcome(source="", code="no_attempt")
         for attempt in job.attempts:
             key = attempt.provider.key
+            now = self._clock.now()
             request = FetchRequest(
                 handle=job.handle,
                 platform_channel_id=job.platform_channel_id,
                 credentials=attempt.credentials,
                 max_videos=self._max_videos,
-                now=self._clock.now(),
+                now=now,
+                since=None
+                if self._lookback_days is None
+                else now - timedelta(days=self._lookback_days),
+                max_pages=self._max_pages,
+                progress=progress,
             )
             try:
                 data = await fetch_with_retry(attempt.provider, request, self._retry, self._sleep)
+                data = await mirror_thumbnails(self._thumbnails, data, progress)
                 return _Outcome(source=key, data=data)
             except ProviderError as error:
                 outcome = _Outcome(

@@ -64,6 +64,7 @@ def client() -> Iterator[TestClient]:
         secret_key="test-secret-key-with-at-least-32-bytes!!",
         admin_email=ADMIN["email"],
         admin_password=ADMIN["password"],
+        sync_lookback_days=0,
     )
     http_client = httpx.AsyncClient(transport=httpx.MockTransport(_scrapecreators_api))
     with TestClient(build_app(settings, http_client)) as test_client:
@@ -274,6 +275,20 @@ def test_metrics_and_videos_endpoints(client: TestClient) -> None:
     assert client.get("/api/v1/channels/missing/metrics").status_code == 404
 
 
+def test_channel_history_start_is_validated(client: TestClient) -> None:
+    _login(client, **ADMIN)
+    _enable_scrapecreators(client)
+    partner = client.post("/api/v1/partners", json={"name": "Alpha"}).json()
+    body = {"partner_id": partner["id"], "handle": "alpha.vn", "provider": "scrapecreators"}
+    future = client.post("/api/v1/channels", json={**body, "history_since": "2099-01-01"})
+    assert future.status_code == 422
+    assert (
+        client.post("/api/v1/channels", json={**body, "history_since": "nope"}).status_code == 422
+    )
+    created = client.post("/api/v1/channels", json={**body, "history_since": "2020-01-01"})
+    assert created.status_code == 201, created.text
+
+
 def test_overview_trend_and_filtered_video_endpoints(client: TestClient) -> None:
     _login(client, **ADMIN)
     _enable_scrapecreators(client)
@@ -295,6 +310,15 @@ def test_overview_trend_and_filtered_video_endpoints(client: TestClient) -> None
     assert runs and all(run["channel_id"] == channel["id"] for run in runs)
     assert client.get("/api/v1/sync/runs?channel_id=missing").json() == []
     assert client.get("/api/v1/videos?sort=nope").status_code == 422
+    activity = client.get(f"/api/v1/channels/{channel['id']}/posting-activity?range=365d")
+    assert activity.status_code == 200, activity.text
+    assert all(set(item) == {"day", "count"} and item["count"] > 0 for item in activity.json())
+    assert client.get("/api/v1/channels/missing/posting-activity").status_code == 404
+    paged = client.get("/api/v1/videos?limit=1&offset=0")
+    assert paged.status_code == 200
+    assert paged.headers["X-Total-Count"] == str(len(client.get("/api/v1/videos").json()))
+    assert len(paged.json()) <= 1
+    assert client.get("/api/v1/videos?offset=-1").status_code == 422
 
 
 def test_compare_endpoint(client: TestClient) -> None:

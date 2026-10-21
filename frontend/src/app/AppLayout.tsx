@@ -1,9 +1,11 @@
 import { Menu as MenuIcon, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { FetchJobsProvider } from '@/features/fetch-jobs/FetchJobsProvider';
 import { GlobalSearchProvider } from '@/features/global-search/GlobalSearchProvider';
 import { cn } from '@/shared/lib/cn';
 import { BrandMark, ConfirmProvider, IconButton } from '@/shared/ui';
+import { FetchDock } from '@/widgets/fetch-dock/FetchDock';
 import { Sidebar } from '@/widgets/sidebar/Sidebar';
 
 export function AppLayout() {
@@ -27,6 +29,7 @@ export function AppLayout() {
   return (
     <GlobalSearchProvider>
     <ConfirmProvider>
+    <FetchJobsProvider>
     <div className="min-h-screen bg-bg text-fg lg:flex">
       <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-bg px-3 lg:hidden">
         <IconButton label="Mở menu" onClick={() => setDrawerOpen(true)}>
@@ -75,7 +78,9 @@ export function AppLayout() {
           </div>
         </div>
       </main>
+      <FetchDock />
     </div>
+    </FetchJobsProvider>
     </ConfirmProvider>
     </GlobalSearchProvider>
   );

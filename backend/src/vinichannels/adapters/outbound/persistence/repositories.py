@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import QueryableAttribute
@@ -28,6 +28,8 @@ from vinichannels.adapters.outbound.persistence.mappers import (
     notification_to_model,
     partner_to_domain,
     provider_to_domain,
+    push_subscription_to_domain,
+    push_subscription_to_model,
     scoring_to_domain,
     sync_run_to_domain,
     user_to_domain,
@@ -44,6 +46,7 @@ from vinichannels.adapters.outbound.persistence.models import (
     PartnerModel,
     PartnerTagModel,
     ProviderConfigModel,
+    PushSubscriptionModel,
     ScoringSettingsModel,
     SyncRunModel,
     UserModel,
@@ -59,7 +62,7 @@ from vinichannels.domain.channels.value_objects import Handle
 from vinichannels.domain.content.entities import Video
 from vinichannels.domain.content.snapshots import ChannelSnapshot, VideoSnapshot
 from vinichannels.domain.identity.entities import User
-from vinichannels.domain.notifications.entities import Notification
+from vinichannels.domain.notifications.entities import Notification, PushSubscription
 from vinichannels.domain.partners.entities import Partner
 from vinichannels.domain.shared.ids import ChannelId, PartnerId, SyncRunId, UserId, VideoId
 from vinichannels.domain.syncing.entities import SyncRun, SyncStatus
@@ -526,3 +529,45 @@ class SqlNotificationRepository:
         )
         await self._session.flush()
         return int(getattr(result, "rowcount", 0) or 0)
+
+
+class SqlPushSubscriptionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert(self, subscription: PushSubscription) -> None:
+        model = await self._session.scalar(
+            select(PushSubscriptionModel).where(
+                PushSubscriptionModel.endpoint == subscription.endpoint
+            )
+        )
+        if model is None:
+            self._session.add(push_subscription_to_model(subscription))
+        else:
+            model.user_id = subscription.user_id
+            model.p256dh = subscription.p256dh
+            model.auth = subscription.auth
+        await self._session.flush()
+
+    async def remove(self, user_id: UserId, endpoint: str) -> None:
+        await self._session.execute(
+            delete(PushSubscriptionModel).where(
+                PushSubscriptionModel.user_id == user_id,
+                PushSubscriptionModel.endpoint == endpoint,
+            )
+        )
+        await self._session.flush()
+
+    async def remove_endpoints(self, endpoints: Sequence[str]) -> None:
+        if not endpoints:
+            return
+        await self._session.execute(
+            delete(PushSubscriptionModel).where(PushSubscriptionModel.endpoint.in_(endpoints))
+        )
+        await self._session.flush()
+
+    async def list_all(self) -> list[PushSubscription]:
+        rows = await self._session.scalars(
+            select(PushSubscriptionModel).order_by(PushSubscriptionModel.created_at)
+        )
+        return [push_subscription_to_domain(row) for row in rows]

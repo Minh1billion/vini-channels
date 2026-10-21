@@ -11,7 +11,7 @@ from vinichannels.domain.channels.value_objects import Handle
 from vinichannels.domain.content.entities import Video
 from vinichannels.domain.content.snapshots import ChannelSnapshot, VideoSnapshot
 from vinichannels.domain.identity.entities import User
-from vinichannels.domain.notifications.entities import Notification
+from vinichannels.domain.notifications.entities import Notification, PushSubscription
 from vinichannels.domain.partners.entities import Partner
 from vinichannels.domain.shared.ids import ChannelId, PartnerId, SyncRunId, UserId, VideoId
 from vinichannels.domain.syncing.entities import SyncRun, SyncStatus
@@ -32,6 +32,7 @@ class MemoryState:
     scoring_weights: ScoreWeights | None = None
     audit_entries: list[AuditEntry] = field(default_factory=list)
     notifications: dict[str, Notification] = field(default_factory=dict)
+    push_subscriptions: dict[str, PushSubscription] = field(default_factory=dict)
 
 
 def _matches(search: str | None, *values: str | None) -> bool:
@@ -363,3 +364,29 @@ class MemoryNotificationRepository:
         for item in unread:
             item.mark_read(at)
         return len(unread)
+
+
+class MemoryPushSubscriptionRepository:
+    def __init__(self, state: MemoryState) -> None:
+        self._items = state.push_subscriptions
+
+    async def upsert(self, subscription: PushSubscription) -> None:
+        existing = self._items.get(subscription.endpoint)
+        if existing is None:
+            self._items[subscription.endpoint] = subscription
+        else:
+            existing.user_id = subscription.user_id
+            existing.p256dh = subscription.p256dh
+            existing.auth = subscription.auth
+
+    async def remove(self, user_id: UserId, endpoint: str) -> None:
+        existing = self._items.get(endpoint)
+        if existing is not None and existing.user_id == user_id:
+            del self._items[endpoint]
+
+    async def remove_endpoints(self, endpoints: Sequence[str]) -> None:
+        for endpoint in endpoints:
+            self._items.pop(endpoint, None)
+
+    async def list_all(self) -> list[PushSubscription]:
+        return sorted(self._items.values(), key=lambda item: item.created_at)

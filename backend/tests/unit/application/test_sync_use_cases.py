@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 
@@ -250,6 +250,71 @@ def test_register_channel_saves_channel_and_first_run_when_crawl_works(
     assert len(state.videos) == 2
     runs = list(state.sync_runs.values())
     assert [(item.status, item.source) for item in runs] == [(SyncStatus.SUCCESS, "apify")]
+
+
+def test_register_channel_crawls_everything_by_default(world: World, manager: User) -> None:
+    partner_id = run(CreatePartner(world.uow, world.clock).execute(manager, "Alpha")).id
+    enable_apify(world)
+    provider = FakeProvider(ProviderKey.APIFY.value, make_data(world))
+    register = RegisterChannel(
+        world.uow,
+        {provider.key: provider},
+        PlainCipher(),
+        world.clock,
+        RetryPolicy(max_attempts=2),
+        noop_sleep,
+        max_pages=42,
+    )
+    run(register.execute(manager, RegisterChannelCommand(partner_id, "a.vn", "apify")))
+    request = provider.requests[0]
+    assert (request.since, request.max_videos, request.max_pages) == (None, None, 42)
+
+
+def test_register_channel_starts_history_at_chosen_day(world: World, manager: User) -> None:
+    partner_id = run(CreatePartner(world.uow, world.clock).execute(manager, "Alpha")).id
+    enable_apify(world)
+    provider = FakeProvider(ProviderKey.APIFY.value, make_data(world))
+    chosen = world.clock.now().date() - timedelta(days=90)
+    command = RegisterChannelCommand(
+        partner_id, "a.vn", "apify", timezone="UTC", history_since=chosen
+    )
+    run(_register(world, provider).execute(manager, command))
+    since = provider.requests[0].since
+    assert since is not None
+    assert (since.date(), since.hour, since.utcoffset()) == (chosen, 0, timedelta(0))
+
+
+def test_register_channel_rejects_history_start_in_the_future(world: World, manager: User) -> None:
+    partner_id = run(CreatePartner(world.uow, world.clock).execute(manager, "Alpha")).id
+    enable_apify(world)
+    provider = FakeProvider(ProviderKey.APIFY.value, make_data(world))
+    future = date(2099, 1, 1)
+    command = RegisterChannelCommand(partner_id, "a.vn", "apify", history_since=future)
+    with pytest.raises(ValidationError):
+        run(_register(world, provider).execute(manager, command))
+    assert provider.requests == []
+
+
+def test_sync_limits_later_fetches_to_the_lookback_window(world: World, manager: User) -> None:
+    provider = FakeProvider(ProviderKey.APIFY.value, make_data(world))
+    partner_id = run(CreatePartner(world.uow, world.clock).execute(manager, "Alpha")).id
+    channel = add_channel(world, partner_id, "alpha.vn")
+    sync = SyncChannel(
+        world.uow,
+        {provider.key: provider},
+        PlainCipher(),
+        world.clock,
+        RetryPolicy(max_attempts=2),
+        noop_sleep,
+        max_videos=50,
+        lookback_days=30,
+        max_pages=7,
+    )
+    enable_apify(world)
+    run(sync.execute(manager, channel.id))
+    request = provider.requests[0]
+    assert request.since == world.clock.now() - timedelta(days=30)
+    assert (request.max_videos, request.max_pages) == (50, 7)
 
 
 def test_register_channel_saves_nothing_when_crawl_fails(world: World, manager: User) -> None:

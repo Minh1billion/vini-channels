@@ -53,7 +53,7 @@ function VideoCard({ video }: { video: VideoRecord }) {
       <p className="text-[13px] text-muted">Tương tác {percent(video.erv)}</p>
     </>
   );
-  const className = 'flex flex-col gap-2 rounded-card border border-border bg-card p-3';
+  const className = 'flex flex-col gap-2 rounded-card border border-border bg-card p-3 transition duration-150 hover:-translate-y-0.5 hover:border-blue';
   return video.url ? (
     <a href={video.url} target="_blank" rel="noreferrer" className={`${className} hover:bg-surface`}>
       {body}

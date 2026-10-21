@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, status
 from vinichannels.adapters.inbound.http.dependencies import CurrentUser, UseCasesDep
 from vinichannels.adapters.inbound.http.schemas.analytics import (
     ChannelMetricsResponse,
+    DailyPostsResponse,
     DailyViewsResponse,
     PeriodDep,
     TrendPointResponse,
@@ -27,6 +28,24 @@ from vinichannels.application.use_cases.channels.register import (
 router = APIRouter(prefix="/channels", tags=["channels"])
 
 
+def register_command(body: ChannelCreateRequest) -> RegisterChannelCommand:
+    token = (
+        ChannelToken(body.token.access_token, body.token.expires_at, body.token.refresh_token)
+        if body.token
+        else None
+    )
+    return RegisterChannelCommand(
+        partner_id=body.partner_id,
+        handle=body.handle,
+        provider=body.provider,
+        display_name=body.display_name,
+        sync_cron=body.sync_cron,
+        timezone=body.timezone,
+        token=token,
+        history_since=body.history_since,
+    )
+
+
 @router.get("")
 async def list_channels(
     user: CurrentUser,
@@ -43,23 +62,7 @@ async def list_channels(
 async def add_channel(
     body: ChannelCreateRequest, user: CurrentUser, use_cases: UseCasesDep
 ) -> ChannelResponse:
-    token = (
-        ChannelToken(body.token.access_token, body.token.expires_at, body.token.refresh_token)
-        if body.token
-        else None
-    )
-    created = await use_cases.register_channel.execute(
-        user,
-        RegisterChannelCommand(
-            partner_id=body.partner_id,
-            handle=body.handle,
-            provider=body.provider,
-            display_name=body.display_name,
-            sync_cron=body.sync_cron,
-            timezone=body.timezone,
-            token=token,
-        ),
-    )
+    created = await use_cases.register_channel.execute(user, register_command(body))
     return ChannelResponse.model_validate(created)
 
 
@@ -101,6 +104,17 @@ async def channel_daily_views(
 ) -> list[DailyViewsResponse]:
     items = await use_cases.get_daily_views.execute(user, channel_id, period)
     return [DailyViewsResponse.model_validate(item) for item in items]
+
+
+@router.get("/{channel_id}/posting-activity")
+async def channel_posting_activity(
+    channel_id: str,
+    user: CurrentUser,
+    use_cases: UseCasesDep,
+    period: PeriodDep,
+) -> list[DailyPostsResponse]:
+    items = await use_cases.get_posting_activity.execute(user, channel_id, period)
+    return [DailyPostsResponse.model_validate(item) for item in items]
 
 
 @router.get("/{channel_id}/video-growth")

@@ -41,6 +41,18 @@ services:
       timeout: 3s
       retries: 20
 
+  minio:
+    image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: vini-minio
+      MINIO_ROOT_PASSWORD: vini-minio-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
   api:
     build:
       context: ./backend
@@ -48,8 +60,19 @@ services:
       PYTHONPATH: src
       VINI_DATABASE_URL: postgresql+asyncpg://vini:vini@postgres:5432/vini
       VINI_SECRET_KEY: dev-only-secret-key-change-me-0123456789abcdef
+      VINI_SYNC_LOOKBACK_DAYS: "30"
+      VINI_SYNC_MAX_VIDEOS: "100"
+      VINI_SYNC_MAX_PAGES: "10"
+      VINI_BACKFILL_MAX_PAGES: "100"
       VINI_ADMIN_EMAIL: admin@vini.local
       VINI_ADMIN_PASSWORD: ChangeMe123
+      VINI_MINIO_ENDPOINT: minio:9000
+      VINI_MINIO_ACCESS_KEY: vini-minio
+      VINI_MINIO_SECRET_KEY: vini-minio-secret
+      VINI_MINIO_BUCKET: vini-thumbnails
+      VINI_VAPID_PUBLIC_KEY: BI1iu7hAtBxcbD06P8vEMu-Qp-UaHlM3esrmekS-LsaWup1pUA6FZned_ikJ0Kf0Z04S1gjxbFsw5l9XK0JwqJQ
+      VINI_VAPID_PRIVATE_KEY: xGtuODuz4a8jGOGNPWzfjEaY34jjTWuAl6EbLzI33yg
+      VINI_VAPID_SUBJECT: mailto:admin@vini.local
     ports:
       - "8000:8000"
     volumes:
@@ -57,6 +80,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     command: uvicorn vinichannels.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir src
     healthcheck:
       test:
@@ -75,8 +100,19 @@ services:
       PYTHONPATH: src
       VINI_DATABASE_URL: postgresql+asyncpg://vini:vini@postgres:5432/vini
       VINI_SECRET_KEY: dev-only-secret-key-change-me-0123456789abcdef
+      VINI_SYNC_LOOKBACK_DAYS: "30"
+      VINI_SYNC_MAX_VIDEOS: "100"
+      VINI_SYNC_MAX_PAGES: "10"
+      VINI_BACKFILL_MAX_PAGES: "100"
       VINI_SCHEDULER_INTERVAL_SEC: "30"
       VINI_SCHEDULER_CONCURRENCY: "3"
+      VINI_MINIO_ENDPOINT: minio:9000
+      VINI_MINIO_ACCESS_KEY: vini-minio
+      VINI_MINIO_SECRET_KEY: vini-minio-secret
+      VINI_MINIO_BUCKET: vini-thumbnails
+      VINI_VAPID_PUBLIC_KEY: BI1iu7hAtBxcbD06P8vEMu-Qp-UaHlM3esrmekS-LsaWup1pUA6FZned_ikJ0Kf0Z04S1gjxbFsw5l9XK0JwqJQ
+      VINI_VAPID_PRIVATE_KEY: xGtuODuz4a8jGOGNPWzfjEaY34jjTWuAl6EbLzI33yg
+      VINI_VAPID_SUBJECT: mailto:admin@vini.local
     volumes:
       - ./backend:/app
     depends_on:
@@ -97,3 +133,4 @@ services:
 volumes:
   frontend_node_modules:
   postgres_data:
+  minio_data:

@@ -1,5 +1,7 @@
 import { useState, type MouseEvent } from 'react';
+import { niceScale } from '@/shared/lib/chartScale';
 import { compact } from '@/shared/lib/format';
+import { useChartWidth } from '@/shared/lib/useChartWidth';
 
 export interface CompareSeries {
   name: string;
@@ -32,73 +34,112 @@ interface Props {
   ariaLabel: string;
   format?: (value: number) => string;
   labelOf?: (key: string) => string;
+  zeroBased?: boolean;
+  xValue?: (key: string) => number;
+  singlePointHint?: string;
+  xTitle?: string;
+  yTitle?: string;
 }
 
-const WIDTH = 640;
-const HEIGHT = 240;
-const PAD = { left: 52, right: 12, top: 12, bottom: 28 };
+const BASE_PAD = { left: 60, right: 12, top: 12, bottom: 28 };
 
 const dayLabel = (iso: string) => {
   const [, month, day] = iso.split('-');
   return `${day}/${month}`;
 };
 
-export function CompareChart({ series, days, ariaLabel, format = compact, labelOf = dayLabel }: Props) {
+export function CompareChart({
+  series,
+  days,
+  ariaLabel,
+  format = compact,
+  labelOf = dayLabel,
+  zeroBased = false,
+  xValue,
+  singlePointHint = 'Mới có một điểm dữ liệu cho mỗi đường. Biểu đồ sẽ xuất hiện sau khi đồng bộ thêm.',
+  xTitle,
+  yTitle,
+}: Props) {
   const [hover, setHover] = useState<number | null>(null);
+  const [figureRef, width] = useChartWidth<HTMLElement>();
+  const HEIGHT = xTitle ? 264 : 240;
+  const PAD = { ...BASE_PAD, left: yTitle ? 76 : BASE_PAD.left, bottom: xTitle ? 52 : BASE_PAD.bottom };
+  const labelY = xTitle ? HEIGHT - 28 : HEIGHT - 8;
   const all = series.flatMap((item) => Object.values(item.values));
-  const min = Math.min(...all);
-  const max = Math.max(...all);
-  const span = max - min || Math.max(1, Math.abs(max) * 0.1);
-  const lower = min - span * 0.1;
-  const upper = max + span * 0.1;
-  const innerWidth = WIDTH - PAD.left - PAD.right;
-  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
-  const x = (index: number) =>
-    PAD.left + (days.length === 1 ? innerWidth / 2 : (index / (days.length - 1)) * innerWidth);
-  const y = (value: number) => PAD.top + (1 - (value - lower) / (upper - lower)) * innerHeight;
-  const ticks = [lower + (upper - lower) * 0.1, (lower + upper) / 2, upper - (upper - lower) * 0.1];
-  const active = hover === null ? days.length - 1 : hover;
+  const hasLine = series.some((item) => Object.keys(item.values).length > 1);
+  const latest = days.length - 1;
+  const active = hover === null ? latest : hover;
   const activeDay = days[active];
 
-  const path = (item: CompareSeries) =>
+  const legend = (key: string) => (
+    <figcaption className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+      <span className="text-muted">{labelOf(key)}</span>
+      {series.map((item) => (
+        <span key={item.name} className="inline-flex items-center gap-1.5">
+          <SeriesSwatch color={item.color} dash={item.dash} />
+          <span className="text-muted">{item.name}</span>
+          <span className="font-medium">{key in item.values ? format(item.values[key]) : '—'}</span>
+        </span>
+      ))}
+    </figcaption>
+  );
+
+  if (!hasLine) {
+    return (
+      <figure ref={figureRef} className="flex flex-col gap-3">
+        {legend(activeDay)}
+        <p className="rounded-field bg-surface px-4 py-6 text-center text-sm text-muted">{singlePointHint}</p>
+      </figure>
+    );
+  }
+
+  const { lower, upper, ticks } = niceScale(Math.min(...all), Math.max(...all), { zeroBased });
+  const positions = days.map((day, index) => (xValue ? xValue(day) : index));
+  const first = positions[0];
+  const last = positions[positions.length - 1];
+  const innerWidth = width - PAD.left - PAD.right;
+  const innerHeight = HEIGHT - PAD.top - PAD.bottom;
+  const x = (index: number) => PAD.left + (last === first ? 0 : ((positions[index] - first) / (last - first)) * innerWidth);
+  const y = (value: number) => PAD.top + (1 - (value - lower) / (upper - lower)) * innerHeight;
+
+  const points = (item: CompareSeries) =>
     days
-      .map((day, index) => (day in item.values ? [index, item.values[day]] : null))
-      .filter((point): point is [number, number] => point !== null)
+      .map((day, index) => (day in item.values ? ([index, item.values[day]] as [number, number]) : null))
+      .filter((point): point is [number, number] => point !== null);
+
+  const path = (item: CompareSeries) =>
+    points(item)
       .map(([index, value], order) => `${order === 0 ? 'M' : 'L'}${x(index)},${y(value)}`)
       .join(' ');
 
   const onMove = (event: MouseEvent<SVGSVGElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
-    const ratio = ((event.clientX - box.left) / box.width) * WIDTH;
-    const index = Math.round(((ratio - PAD.left) / innerWidth) * (days.length - 1));
-    setHover(Math.min(days.length - 1, Math.max(0, index)));
+    const position = ((event.clientX - box.left) / box.width) * width;
+    let nearest = 0;
+    for (let index = 1; index < days.length; index += 1) {
+      if (Math.abs(x(index) - position) < Math.abs(x(nearest) - position)) nearest = index;
+    }
+    setHover(nearest);
   };
 
   return (
-    <figure className="flex flex-col gap-3">
-      <figcaption className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
-        <span className="text-muted">{labelOf(activeDay)}</span>
-        {series.map((item) => (
-          <span key={item.name} className="inline-flex items-center gap-1.5">
-            <SeriesSwatch color={item.color} dash={item.dash} />
-            <span className="text-muted">{item.name}</span>
-            <span className="font-medium">{activeDay in item.values ? format(item.values[activeDay]) : '—'}</span>
-          </span>
-        ))}
-      </figcaption>
+    <figure ref={figureRef} className="flex flex-col gap-3">
+      {legend(activeDay)}
       <svg
         role="img"
         aria-label={ariaLabel}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="h-auto w-full"
+        viewBox={`0 0 ${width} ${HEIGHT}`}
+        width={width}
+        height={HEIGHT}
+        className="block max-w-full"
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
         {ticks.map((tick) => (
           <g key={tick}>
-            <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(tick)} y2={y(tick)} stroke="var(--border)" />
+            <line x1={PAD.left} x2={width - PAD.right} y1={y(tick)} y2={y(tick)} stroke="var(--border)" />
             <text x={PAD.left - 8} y={y(tick) + 4} textAnchor="end" fontSize="11" fill="var(--muted)">
-              {compact(tick)}
+              {format(tick)}
             </text>
           </g>
         ))}
@@ -106,17 +147,38 @@ export function CompareChart({ series, days, ariaLabel, format = compact, labelO
         {series.map((item) => (
           <g key={item.name}>
             <path d={path(item)} fill="none" stroke={item.color} strokeDasharray={item.dash} strokeWidth="2" strokeLinejoin="round" />
+            {points(item).length <= 31
+              ? points(item).map(([index, value]) => (
+                  <circle key={index} cx={x(index)} cy={y(value)} r="2.5" fill={item.color} />
+                ))
+              : null}
+            {activeDay in item.values ? (
+              <circle cx={x(active)} cy={y(item.values[activeDay])} r="9" fill={item.color} opacity="0.15" />
+            ) : null}
             {activeDay in item.values ? (
               <circle cx={x(active)} cy={y(item.values[activeDay])} r="4" fill={item.color} stroke="var(--card)" strokeWidth="2" />
             ) : null}
           </g>
         ))}
-        <text x={PAD.left} y={HEIGHT - 8} fontSize="11" fill="var(--muted)">
+        <text x={PAD.left} y={labelY} fontSize="11" fill="var(--muted)">
           {labelOf(days[0])}
         </text>
-        {days.length > 1 ? (
-          <text x={WIDTH - PAD.right} y={HEIGHT - 8} textAnchor="end" fontSize="11" fill="var(--muted)">
-            {labelOf(days[days.length - 1])}
+        <text x={width - PAD.right} y={labelY} textAnchor="end" fontSize="11" fill="var(--muted)">
+          {labelOf(days[days.length - 1])}
+        </text>
+        {yTitle ? (
+          <text
+            transform={`translate(13 ${PAD.top + innerHeight / 2}) rotate(-90)`}
+            textAnchor="middle"
+            fontSize="11"
+            fill="var(--muted)"
+          >
+            {yTitle}
+          </text>
+        ) : null}
+        {xTitle ? (
+          <text x={PAD.left + innerWidth / 2} y={HEIGHT - 6} textAnchor="middle" fontSize="11" fill="var(--muted)">
+            {xTitle}
           </text>
         ) : null}
       </svg>

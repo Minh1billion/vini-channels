@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -24,12 +24,25 @@ from vinichannels.application.ports.data_provider import (
 from vinichannels.domain.syncing.policies import SyncErrorKind
 from vinichannels.domain.syncing.providers import ProviderKey
 
-_MAX_PAGES = 3
 _FALLBACK_REGION = "US"
+
+
+class _Feed(NamedTuple):
+    videos: list[FetchedVideo]
+    seen: int
+    warning: str | None
 
 
 def _unavailable(message: str) -> Exception:
     return ProviderUnavailable(message)
+
+
+def _pick_cover(urls: list[object]) -> str | None:
+    texts = [text for text in (as_text(url) for url in urls) if text]
+    for text in texts:
+        if not text.split("?")[0].lower().endswith(".heic"):
+            return text
+    return texts[0] if texts else None
 
 
 def _video(item: Json) -> FetchedVideo | None:
@@ -50,9 +63,13 @@ def _video(item: Json) -> FetchedVideo | None:
         saves=as_int(stats.get("collect_count")) if "collect_count" in stats else None,
         url=as_text(item.get("share_url")),
         caption=as_text(item.get("desc")) or "",
-        thumbnail_url=as_text(covers[0]) if covers else None,
+        thumbnail_url=_pick_cover(covers),
         duration_sec=as_int(media.get("duration")) // 1000,
     )
+
+
+def _capped(videos: list[FetchedVideo], request: FetchRequest) -> list[FetchedVideo]:
+    return videos if request.max_videos is None else videos[: request.max_videos]
 
 
 class ScrapeCreatorsProvider:
@@ -93,11 +110,17 @@ class ScrapeCreatorsProvider:
         )
 
     async def _videos(
-        self, handle: str, api_key: str, limit: int, user_id: str | None, region: str | None
-    ) -> list[FetchedVideo]:
+        self,
+        handle: str,
+        api_key: str,
+        request: FetchRequest,
+        user_id: str | None,
+        region: str | None,
+    ) -> _Feed:
         collected: list[FetchedVideo] = []
+        seen = 0
         cursor: str | None = None
-        for _ in range(_MAX_PAGES):
+        for page in range(request.max_pages):
             params = {"handle": handle, "sort_by": "latest"}
             if user_id:
                 params["user_id"] = user_id
@@ -105,23 +128,38 @@ class ScrapeCreatorsProvider:
                 params["region"] = region
             if cursor:
                 params["max_cursor"] = cursor
-            body = as_obj(await self._get("/v3/tiktok/profile/videos", params, api_key))
-            for item in as_list(body.get("aweme_list")):
-                parsed = _video(as_obj(item))
-                if parsed is not None:
-                    collected.append(parsed)
+            try:
+                body = as_obj(await self._get("/v3/tiktok/profile/videos", params, api_key))
+            except (ProviderError, ProviderUnavailable) as error:
+                if not collected:
+                    raise
+                warning = f"Dừng ở trang {page + 1} do lỗi: {error.message}"
+                return _Feed(_capped(collected, request), seen, warning)
+            fresh = [
+                parsed
+                for item in as_list(body.get("aweme_list"))
+                if (parsed := _video(as_obj(item))) is not None
+            ]
+            seen += len(fresh)
+            wanted = [v for v in fresh if request.since is None or v.posted_at >= request.since]
+            collected.extend(wanted)
+            if request.progress is not None:
+                await request.progress("Đang lấy dữ liệu", len(collected), None)
             cursor = as_text(body.get("max_cursor"))
-            if len(collected) >= limit or not body.get("has_more") or cursor is None:
-                break
-        return collected[:limit]
+            passed_since = request.since is not None and bool(fresh) and not wanted
+            full = request.max_videos is not None and len(collected) >= request.max_videos
+            if full or passed_since or not body.get("has_more") or cursor is None:
+                return _Feed(_capped(collected, request), seen, None)
+        warning = f"Đã đạt giới hạn {request.max_pages} trang, có thể còn video cũ chưa lấy"
+        return _Feed(_capped(collected, request), seen, warning)
 
     async def _videos_with_region_fallback(
-        self, handle: str, api_key: str, limit: int, user_id: str | None
-    ) -> list[FetchedVideo]:
-        videos = await self._videos(handle, api_key, limit, user_id, None)
-        if videos:
-            return videos
-        return await self._videos(handle, api_key, limit, user_id, _FALLBACK_REGION)
+        self, handle: str, api_key: str, request: FetchRequest, user_id: str | None
+    ) -> _Feed:
+        feed = await self._videos(handle, api_key, request, user_id, None)
+        if feed.seen:
+            return feed
+        return await self._videos(handle, api_key, request, user_id, _FALLBACK_REGION)
 
     async def fetch(self, request: FetchRequest) -> ProviderData:
         api_key = request.credentials.get("api_key", "")
@@ -129,8 +167,8 @@ class ScrapeCreatorsProvider:
             raise ProviderUnavailable("Chưa cấu hình API key của ScrapeCreators")
         profile = await self._profile(request.handle, api_key)
         try:
-            videos = await self._videos_with_region_fallback(
-                request.handle, api_key, request.max_videos, profile.platform_channel_id
+            feed = await self._videos_with_region_fallback(
+                request.handle, api_key, request, profile.platform_channel_id
             )
         except (ProviderError, ProviderUnavailable) as error:
             return ProviderData(
@@ -138,4 +176,4 @@ class ScrapeCreatorsProvider:
                 videos=(),
                 warning=f"Không lấy được danh sách video: {error.message}",
             )
-        return ProviderData(profile=profile, videos=tuple(videos))
+        return ProviderData(profile=profile, videos=tuple(feed.videos), warning=feed.warning)

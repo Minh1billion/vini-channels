@@ -5,7 +5,11 @@ import pytest
 from tests.unit.application.conftest import World, add_channel, run
 from vinichannels.application.errors import NotFound
 from vinichannels.application.use_cases.analytics.compare import CompareChannels
-from vinichannels.application.use_cases.analytics.growth import GetChannelDailyViews, GetVideoGrowth
+from vinichannels.application.use_cases.analytics.growth import (
+    GetChannelDailyViews,
+    GetPostingActivity,
+    GetVideoGrowth,
+)
 from vinichannels.application.use_cases.analytics.metrics import (
     GetChannelMetrics,
     ListVideos,
@@ -156,6 +160,37 @@ def test_list_videos_filters_and_sorts_across_channels(
     assert [item.handle for item in by_views] == ["beta", "alpha", "beta"]
     assert len(only_beta) == 1
     assert only_beta[0].handle == "beta"
+
+
+def test_list_videos_paginates_with_total(world: World, manager: User, channel_id: str) -> None:
+    for index, hour in enumerate((14, 15, 16, 17, 18)):
+        seed_video(world, channel_id, f"v{index}", at(hour), (at(19), 100 * (index + 1), 10))
+    use_case = ListVideos(world.uow, world.clock)
+
+    first = run(use_case.page(manager, None, LAST_7, limit=2, offset=0, sort=VideoSort.VIEWS))
+    last = run(use_case.page(manager, None, LAST_7, limit=2, offset=4, sort=VideoSort.VIEWS))
+    beyond = run(use_case.page(manager, None, LAST_7, limit=2, offset=10, sort=VideoSort.VIEWS))
+
+    assert first.total == last.total == beyond.total == 5
+    assert [item.platform_video_id for item in first.items] == ["v4", "v3"]
+    assert [item.platform_video_id for item in last.items] == ["v0"]
+    assert beyond.items == []
+
+
+def test_posting_activity_counts_videos_per_local_day(
+    world: World, manager: User, channel_id: str
+) -> None:
+    seed_video(world, channel_id, "a", at(14, 2))
+    seed_video(world, channel_id, "b", at(14, 20))
+    seed_video(world, channel_id, "c", at(16, 9))
+    use_case = GetPostingActivity(world.uow, world.clock)
+
+    utc = run(use_case.execute(manager, channel_id, LAST_7))
+    shifted = run(use_case.execute(manager, channel_id, PeriodSpec.last(7, 420)))
+
+    assert [(item.day.day, item.count) for item in utc] == [(14, 2), (16, 1)]
+    assert [(item.day.day, item.count) for item in shifted] == [(14, 1), (15, 1), (16, 1)]
+    assert run(use_case.execute(manager, channel_id, PeriodSpec.last(1))) == []
 
 
 def _second_channel(world: World, manager: User) -> str:

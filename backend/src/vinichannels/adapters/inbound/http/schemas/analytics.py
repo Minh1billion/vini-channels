@@ -68,6 +68,13 @@ class DailyViewsResponse(BaseModel):
     views: int
 
 
+class DailyPostsResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    day: date
+    count: int
+
+
 class GrowthPointResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

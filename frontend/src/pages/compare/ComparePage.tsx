@@ -196,6 +196,7 @@ export function ComparePage() {
                   days={chartDays}
                   ariaLabel={`Biểu đồ so sánh ${TREND_METRICS.find((item) => item.id === trendMetric)?.label.toLowerCase()} ${periodLabel(period)}`}
                   format={full}
+                  singlePointHint="Mới có dữ liệu của một ngày. Biểu đồ so sánh sẽ xuất hiện sau khi đồng bộ thêm ít nhất một ngày nữa."
                 />
               )}
             </Widget>

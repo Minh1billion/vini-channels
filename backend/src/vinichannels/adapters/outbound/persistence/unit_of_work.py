@@ -10,6 +10,7 @@ from vinichannels.adapters.outbound.persistence.repositories import (
     SqlChannelRepository,
     SqlPartnerRepository,
     SqlProviderConfigRepository,
+    SqlPushSubscriptionRepository,
     SqlScoringSettingsRepository,
     SqlSnapshotRepository,
     SqlSyncRunRepository,
@@ -23,6 +24,7 @@ from vinichannels.application.ports.repositories import (
     NotificationRepository,
     PartnerRepository,
     ProviderConfigRepository,
+    PushSubscriptionRepository,
     ScoringSettingsRepository,
     SnapshotRepository,
     SyncRunRepository,
@@ -43,6 +45,7 @@ class SqlUnitOfWork:
     scoring: ScoringSettingsRepository
     audit: AuditLogRepository
     notifications: NotificationRepository
+    push_subscriptions: PushSubscriptionRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -62,6 +65,7 @@ class SqlUnitOfWork:
         self.scoring = SqlScoringSettingsRepository(session)
         self.audit = SqlAuditLogRepository(session)
         self.notifications = SqlNotificationRepository(session)
+        self.push_subscriptions = SqlPushSubscriptionRepository(session)
         return self
 
     async def __aexit__(

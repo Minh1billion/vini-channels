@@ -23,6 +23,22 @@ class SyncRunResponse(BaseModel):
     error_message: str | None
 
 
+class FetchJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    kind: str
+    label: str
+    status: str
+    stage: str
+    done: int
+    total: int | None
+    message: str
+    channel_id: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
 class SyncScheduleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

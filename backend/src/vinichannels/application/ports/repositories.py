@@ -10,7 +10,7 @@ from vinichannels.domain.channels.value_objects import Handle
 from vinichannels.domain.content.entities import Video
 from vinichannels.domain.content.snapshots import ChannelSnapshot, VideoSnapshot
 from vinichannels.domain.identity.entities import User
-from vinichannels.domain.notifications.entities import Notification
+from vinichannels.domain.notifications.entities import Notification, PushSubscription
 from vinichannels.domain.partners.entities import Partner
 from vinichannels.domain.shared.ids import ChannelId, PartnerId, SyncRunId, UserId, VideoId
 from vinichannels.domain.syncing.entities import SyncRun, SyncStatus
@@ -171,3 +171,13 @@ class NotificationRepository(Protocol):
     async def count_unread(self) -> int: ...
 
     async def mark_all_read(self, at: datetime) -> int: ...
+
+
+class PushSubscriptionRepository(Protocol):
+    async def upsert(self, subscription: PushSubscription) -> None: ...
+
+    async def remove(self, user_id: UserId, endpoint: str) -> None: ...
+
+    async def remove_endpoints(self, endpoints: Sequence[str]) -> None: ...
+
+    async def list_all(self) -> list[PushSubscription]: ...

@@ -1,6 +1,9 @@
+import logging
+
 from vinichannels.application.ports.clock import Clock
 from vinichannels.application.ports.unit_of_work import UnitOfWorkFactory
 from vinichannels.application.use_cases.analytics.metrics import collect_period, metrics_for
+from vinichannels.application.use_cases.notifications.push import PushNotifier
 from vinichannels.domain.analytics.periods import DateRange
 from vinichannels.domain.channels.entities import Channel
 from vinichannels.domain.notifications.entities import Notification, NotificationKind
@@ -15,18 +18,26 @@ from vinichannels.domain.shared.ids import new_id
 
 RUN_LOOKBACK = 20
 
+_log = logging.getLogger(__name__)
+
 
 class EvaluateAlerts:
-    def __init__(self, uow_factory: UnitOfWorkFactory, clock: Clock) -> None:
+    def __init__(
+        self,
+        uow_factory: UnitOfWorkFactory,
+        clock: Clock,
+        notifier: PushNotifier | None = None,
+    ) -> None:
         self._uow_factory = uow_factory
         self._clock = clock
+        self._notifier = notifier
 
     async def execute(self) -> int:
         now = self._clock.now()
         today = now.date()
         week = today.isocalendar()
         period = DateRange.last_days(ENGAGEMENT_PERIOD_DAYS, today)
-        created = 0
+        fresh: list[Notification] = []
         async with self._uow_factory() as uow:
             channels = [c for c in await uow.channels.list_all() if c.is_active]
             for channel in channels:
@@ -73,13 +84,17 @@ class EvaluateAlerts:
                 for kind, key, title, message in candidates:
                     if await uow.notifications.exists(key):
                         continue
-                    await uow.notifications.add(
-                        Notification(new_id(), kind, channel.id, key, title, message, now)
-                    )
-                    created += 1
-            if created:
+                    item = Notification(new_id(), kind, channel.id, key, title, message, now)
+                    await uow.notifications.add(item)
+                    fresh.append(item)
+            if fresh:
                 await uow.commit()
-        return created
+        if fresh and self._notifier is not None:
+            try:
+                await self._notifier.notify(fresh)
+            except Exception:
+                _log.exception("Đẩy thông báo thất bại")
+        return len(fresh)
 
 
 def _name(channel: Channel) -> str:

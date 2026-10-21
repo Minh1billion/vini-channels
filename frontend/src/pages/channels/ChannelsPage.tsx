@@ -9,6 +9,7 @@ import type { ChannelRecord } from '@/entities/channel/types';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { RangePicker } from '@/features/period-picker/RangePicker';
 import { AddChannelDialog } from '@/features/channel-forms/AddChannelDialog';
+import { useOnJobFinished } from '@/features/fetch-jobs/FetchJobsProvider';
 import { ChannelDialog } from '@/features/channel-forms/ChannelDialog';
 import { analyticsApi, channelsApi, partnersApi } from '@/shared/api';
 import { signedCount } from '@/entities/analytics/kpis';
@@ -80,6 +81,8 @@ export function ChannelsPage() {
     overview.reload();
     partners.reload();
   };
+
+  useOnJobFinished(refresh);
 
   const toggleArchive = async (channel: ChannelRecord) => {
     if (

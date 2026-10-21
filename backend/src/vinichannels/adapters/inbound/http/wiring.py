@@ -2,7 +2,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from vinichannels.application.use_cases.analytics.compare import CompareChannels
-from vinichannels.application.use_cases.analytics.growth import GetChannelDailyViews, GetVideoGrowth
+from vinichannels.application.use_cases.analytics.growth import (
+    GetChannelDailyViews,
+    GetPostingActivity,
+    GetVideoGrowth,
+)
 from vinichannels.application.use_cases.analytics.metrics import GetChannelMetrics, ListVideos
 from vinichannels.application.use_cases.analytics.overview import GetChannelTrend, GetOverview
 from vinichannels.application.use_cases.audit.query import ListAuditLog
@@ -21,10 +25,21 @@ from vinichannels.application.use_cases.identity.auth import (
     Login,
 )
 from vinichannels.application.use_cases.identity.users import CreateUser, ListUsers, UpdateUser
+from vinichannels.application.use_cases.jobs.fetch_jobs import (
+    ListFetchJobs,
+    StartRegisterChannel,
+    StartSyncChannel,
+)
+from vinichannels.application.use_cases.media.thumbnail import GetThumbnail
 from vinichannels.application.use_cases.notifications.inbox import (
     ListNotifications,
     MarkAllNotificationsRead,
     MarkNotificationRead,
+)
+from vinichannels.application.use_cases.notifications.push import (
+    GetPushConfig,
+    SubscribePush,
+    UnsubscribePush,
 )
 from vinichannels.application.use_cases.partners.crud import (
     ArchivePartner,
@@ -82,6 +97,7 @@ class UseCases:
     compare_channels: CompareChannels
     get_daily_views: GetChannelDailyViews
     get_video_growth: GetVideoGrowth
+    get_posting_activity: GetPostingActivity
     list_videos: ListVideos
     get_channel_trend: GetChannelTrend
     get_overview: GetOverview
@@ -90,6 +106,13 @@ class UseCases:
     list_notifications: ListNotifications
     mark_notification_read: MarkNotificationRead
     mark_all_notifications_read: MarkAllNotificationsRead
+    get_push_config: GetPushConfig
+    subscribe_push: SubscribePush
+    unsubscribe_push: UnsubscribePush
+    get_thumbnail: GetThumbnail
+    start_register_channel: StartRegisterChannel
+    start_sync_channel: StartSyncChannel
+    list_fetch_jobs: ListFetchJobs
     get_scoring_weights: GetScoringWeights
     update_scoring_weights: UpdateScoringWeights
     list_audit_log: ListAuditLog

@@ -27,7 +27,7 @@ export function KpiRow({ items }: { items?: Kpi[] }) {
         const Icon = icons[index % icons.length];
         return (
           <li key={kpi?.label ?? index} className="animate-rise" style={{ animationDelay: `${index * 60}ms` }}>
-            <Widget className="h-full" bodyClassName="flex flex-col gap-1 p-4">
+            <Widget className="h-full transition duration-150 hover:-translate-y-0.5 hover:border-blue" bodyClassName="flex flex-col gap-1 p-4">
               {kpi ? (
                 <>
                   <span className="flex items-center gap-2 text-[13px] text-muted">

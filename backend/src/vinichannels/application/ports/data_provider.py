@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from vinichannels.application.progress import Progress
 from vinichannels.domain.syncing.policies import SyncErrorKind
 
 
@@ -24,8 +25,11 @@ class FetchRequest:
     handle: str
     platform_channel_id: str | None
     credentials: Mapping[str, str]
-    max_videos: int
+    max_videos: int | None
     now: datetime
+    since: datetime | None = None
+    max_pages: int = 3
+    progress: Progress | None = None
 
 
 @dataclass(frozen=True, slots=True)

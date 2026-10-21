@@ -12,6 +12,7 @@ export type ChannelCreateInput = {
   sync_cron: string | null;
   timezone: string;
   token?: ChannelTokenInput;
+  history_since?: string | null;
 };
 
 export type ChannelUpdateInput = { display_name?: string; is_active?: boolean };

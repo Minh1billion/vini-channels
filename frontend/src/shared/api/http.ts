@@ -34,7 +34,12 @@ function buildUrl(path: string, query?: Query) {
   return suffix ? `${BASE}${path}?${suffix}` : `${BASE}${path}`;
 }
 
-async function request<T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> {
+async function send<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  query?: Query,
+): Promise<{ payload: T; response: Response }> {
   let response: Response;
   try {
     response = await fetch(buildUrl(path, query), {
@@ -47,7 +52,7 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
     throw new ApiError(0, 'network_error', 'Không kết nối được máy chủ');
   }
 
-  if (response.status === 204) return undefined as T;
+  if (response.status === 204) return { payload: undefined as T, response };
 
   const payload: unknown = await response.json().catch(() => null);
 
@@ -62,11 +67,28 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
     );
   }
 
-  return payload as T;
+  return { payload: payload as T, response };
+}
+
+async function request<T>(method: string, path: string, body?: unknown, query?: Query): Promise<T> {
+  const { payload } = await send<T>(method, path, body, query);
+  return payload;
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+}
+
+async function getPage<T>(path: string, query?: Query): Promise<Page<T>> {
+  const { payload, response } = await send<T[]>('GET', path, undefined, query);
+  const header = Number(response.headers.get('X-Total-Count'));
+  return { items: payload, total: Number.isFinite(header) && header > 0 ? header : payload.length };
 }
 
 export const http = {
   get: <T>(path: string, query?: Query) => request<T>('GET', path, undefined, query),
+  getPage,
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body ?? {}),

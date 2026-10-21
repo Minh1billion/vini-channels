@@ -153,6 +153,127 @@ def test_scrapecreators_retries_empty_feed_with_region() -> None:
     assert [video.views for video in data.videos] == [8]
 
 
+def _feed_handler(pages: list[dict[str, object]], calls: list[str | None]):  # type: ignore[no-untyped-def]
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/tiktok/profile":
+            return httpx.Response(200, json={"user": {"id": "1"}, "stats": {"followerCount": 1}})
+        cursor = request.url.params.get("max_cursor")
+        calls.append(cursor)
+        return httpx.Response(200, json=pages[len(calls) - 1])
+
+    return handler
+
+
+def _item(video_id: str, created: int) -> dict[str, object]:
+    return {"aweme_id": video_id, "create_time": created, "statistics": {"play_count": 1}}
+
+
+DAY = 86_400
+BASE = int(NOW.timestamp())
+
+
+def test_scrapecreators_follows_cursors_until_history_ends() -> None:
+    calls: list[str | None] = []
+    pages = [
+        {
+            "aweme_list": [_item("a", BASE - DAY), _item("b", BASE - 2 * DAY)],
+            "has_more": 1,
+            "max_cursor": "c1",
+        },
+        {"aweme_list": [_item("c", BASE - 3 * DAY)], "has_more": 1, "max_cursor": "c2"},
+        {"aweme_list": [_item("d", BASE - 400 * DAY)], "has_more": 0, "max_cursor": "c3"},
+    ]
+    request = FetchRequest("alpha.vn", None, {"api_key": "k"}, None, NOW, None, 10)
+
+    data = _fetch(
+        ScrapeCreatorsProvider(_client(httpx.MockTransport(_feed_handler(pages, calls)))), request
+    )
+
+    assert calls == [None, "c1", "c2"]
+    assert [video.platform_video_id for video in data.videos] == ["a", "b", "c", "d"]
+    assert data.warning is None
+
+
+def test_scrapecreators_stops_once_a_page_is_older_than_since() -> None:
+    calls: list[str | None] = []
+    pages = [
+        {
+            "aweme_list": [_item("a", BASE - DAY), _item("b", BASE - 10 * DAY)],
+            "has_more": 1,
+            "max_cursor": "c1",
+        },
+        {
+            "aweme_list": [_item("c", BASE - 20 * DAY), _item("d", BASE - 30 * DAY)],
+            "has_more": 1,
+            "max_cursor": "c2",
+        },
+        {"aweme_list": [_item("e", BASE - 40 * DAY)], "has_more": 1, "max_cursor": "c3"},
+    ]
+    since = datetime.fromtimestamp(BASE - 15 * DAY, UTC)
+    request = FetchRequest("alpha.vn", None, {"api_key": "k"}, None, NOW, since, 10)
+
+    data = _fetch(
+        ScrapeCreatorsProvider(_client(httpx.MockTransport(_feed_handler(pages, calls)))), request
+    )
+
+    assert calls == [None, "c1"]
+    assert [video.platform_video_id for video in data.videos] == ["a", "b"]
+    assert data.warning is None
+
+
+def test_scrapecreators_does_not_retry_region_when_since_filters_everything() -> None:
+    calls: list[str | None] = []
+    pages = [{"aweme_list": [_item("a", BASE - 90 * DAY)], "has_more": 1, "max_cursor": "c1"}]
+    since = datetime.fromtimestamp(BASE - 7 * DAY, UTC)
+    request = FetchRequest("alpha.vn", None, {"api_key": "k"}, None, NOW, since, 10)
+
+    data = _fetch(
+        ScrapeCreatorsProvider(_client(httpx.MockTransport(_feed_handler(pages, calls)))), request
+    )
+
+    assert calls == [None]
+    assert data.videos == ()
+
+
+def test_scrapecreators_warns_when_page_cap_is_reached() -> None:
+    calls: list[str | None] = []
+    pages = [
+        {"aweme_list": [_item(str(n), BASE - n * DAY)], "has_more": 1, "max_cursor": f"c{n}"}
+        for n in range(1, 4)
+    ]
+    request = FetchRequest("alpha.vn", None, {"api_key": "k"}, None, NOW, None, 2)
+
+    data = _fetch(
+        ScrapeCreatorsProvider(_client(httpx.MockTransport(_feed_handler(pages, calls)))), request
+    )
+
+    assert len(calls) == 2
+    assert len(data.videos) == 2
+    assert data.warning is not None
+
+
+def test_scrapecreators_keeps_collected_pages_when_a_later_page_fails() -> None:
+    calls: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/tiktok/profile":
+            return httpx.Response(200, json={"user": {"id": "1"}, "stats": {"followerCount": 1}})
+        calls.append(request.url.params.get("max_cursor"))
+        if len(calls) == 1:
+            return httpx.Response(
+                200,
+                json={"aweme_list": [_item("a", BASE - DAY)], "has_more": 1, "max_cursor": "c1"},
+            )
+        return httpx.Response(500)
+
+    request = FetchRequest("alpha.vn", None, {"api_key": "k"}, None, NOW, None, 10)
+
+    data = _fetch(ScrapeCreatorsProvider(_client(httpx.MockTransport(handler))), request)
+
+    assert [video.platform_video_id for video in data.videos] == ["a"]
+    assert data.warning is not None
+
+
 def test_apify_parses_items_and_flags_private() -> None:
     items = [
         {

@@ -14,6 +14,10 @@ dependencies = [
   "httpx>=0.27",
   "cryptography>=43",
   "alembic>=1.13",
+  "minio>=7.2",
+  "pillow>=10.4",
+  "pillow-heif>=0.18",
+  "pywebpush>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -48,6 +52,10 @@ strict = true
 mypy_path = "src"
 packages = ["vinichannels"]
 
+[[tool.mypy.overrides]]
+module = ["pywebpush", "py_vapid"]
+ignore_missing_imports = true
+
 [tool.importlinter]
 root_package = "vinichannels"
 include_external_packages = true
@@ -66,10 +74,10 @@ layers = [
 name = "Domain không import framework"
 type = "forbidden"
 source_modules = ["vinichannels.domain"]
-forbidden_modules = ["fastapi", "sqlalchemy", "httpx", "pydantic", "redis", "arq", "alembic", "jwt", "argon2"]
+forbidden_modules = ["fastapi", "sqlalchemy", "httpx", "pydantic", "redis", "arq", "alembic", "jwt", "argon2", "minio", "PIL", "pillow_heif"]
 
 [[tool.importlinter.contracts]]
 name = "Application không import framework"
 type = "forbidden"
 source_modules = ["vinichannels.application"]
-forbidden_modules = ["fastapi", "sqlalchemy", "httpx", "pydantic", "redis", "arq", "alembic", "jwt", "argon2"]
+forbidden_modules = ["fastapi", "sqlalchemy", "httpx", "pydantic", "redis", "arq", "alembic", "jwt", "argon2", "minio", "PIL", "pillow_heif"]

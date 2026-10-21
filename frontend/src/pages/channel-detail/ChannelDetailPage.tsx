@@ -1,7 +1,8 @@
-import { ArrowLeft, ExternalLink, LineChart, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, ArrowLeft, Clapperboard, ExternalLink, LineChart, RefreshCw, TrendingUp } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { VideoGrowth } from '@/entities/analytics/types';
+import { channelFacts } from '@/entities/analytics/insights';
+import type { VideoGrowth, VideoRecord, VideoSort } from '@/entities/analytics/types';
 import { changeRatio, signedCount, signedPercent, type Kpi } from '@/entities/analytics/kpis';
 import { ChannelAvatar } from '@/entities/channel/ChannelAvatar';
 import { StatusBadge } from '@/entities/channel/StatusBadge';
@@ -16,19 +17,45 @@ import { errorMessage } from '@/shared/lib/errors';
 import { lastDays, periodKey, periodLabel, type Period } from '@/shared/lib/period';
 import { compact, dateTime, full, percent, relativeTime } from '@/shared/lib/format';
 import { useAsync } from '@/shared/lib/useAsync';
-import { Button, DataTable, EmptyState, FormError, Skeleton, Widget, type Column } from '@/shared/ui';
+import { Button, Chip, DataTable, EmptyState, FormError, Skeleton, Tabs, Widget, type Column } from '@/shared/ui';
+import { MetricGrid, type Profile } from '@/widgets/channel-metrics/MetricGrid';
+import { DataReadiness, NeedsBadge } from '@/widgets/data-readiness/DataReadiness';
+import { EngagementMix } from '@/widgets/engagement-mix/EngagementMix';
 import { KpiRow } from '@/widgets/kpi-row/KpiRow';
 import { PageHeader } from '@/widgets/page-header/PageHeader';
+import { PostingTimeHeatmap } from '@/widgets/posting-time/PostingTimeHeatmap';
 import { TrendChart } from '@/widgets/trend-chart/TrendChart';
+import { ActivityHeatmap } from '@/widgets/activity-heatmap/ActivityHeatmap';
 import { CompareChart, seriesStyle } from '@/widgets/compare-chart/CompareChart';
 import { VideoGrid } from '@/widgets/video-grid/VideoGrid';
+import { VideoScatter } from '@/widgets/video-scatter/VideoScatter';
+import { ViewsDistribution } from '@/widgets/views-distribution/ViewsDistribution';
 
 const METRICS = [
   { id: 'followers', label: 'Người theo dõi' },
   { id: 'total_likes', label: 'Tổng lượt thích' },
+  { id: 'video_count', label: 'Số video' },
 ] as const;
 
 type MetricId = (typeof METRICS)[number]['id'];
+type TrendMode = 'total' | 'change';
+type TabId = 'state' | 'trend' | 'videos';
+
+const TABS: Array<{ id: TabId; label: string; icon: typeof Activity }> = [
+  { id: 'state', label: 'Hiện trạng', icon: Activity },
+  { id: 'trend', label: 'Xu hướng', icon: TrendingUp },
+  { id: 'videos', label: 'Video và đồng bộ', icon: Clapperboard },
+];
+
+const TOP_SORTS: Array<{ id: VideoSort; label: string }> = [
+  { id: 'views', label: 'Lượt xem' },
+  { id: 'likes', label: 'Lượt thích' },
+  { id: 'comments', label: 'Bình luận' },
+  { id: 'shares', label: 'Chia sẻ' },
+  { id: 'erv', label: 'Tương tác' },
+];
+
+const metricTitle = (id: MetricId) => METRICS.find((item) => item.id === id)?.label ?? '';
 
 const dayLabel = (iso: string) => {
   const [, month, day] = iso.split('-');
@@ -69,6 +96,8 @@ const runColumns: Array<Column<SyncRunRecord>> = [
   },
 ];
 
+const HEATMAP_DAYS = 365;
+
 export function ChannelDetailPage() {
   const { id = '' } = useParams();
   const { can } = useAuth();
@@ -76,6 +105,9 @@ export function ChannelDetailPage() {
   const canSync = can('sync:write');
   const [period, setPeriod] = useState<Period>(lastDays(30));
   const [metric, setMetric] = useState<MetricId>('followers');
+  const [mode, setMode] = useState<TrendMode>('total');
+  const [tab, setTab] = useState<TabId>('state');
+  const [topSort, setTopSort] = useState<VideoSort>('views');
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const periodId = periodKey(period);
@@ -84,8 +116,18 @@ export function ChannelDetailPage() {
   const metrics = useAsync(() => analyticsApi.metrics(id, period), [id, periodId]);
   const trend = useAsync(() => analyticsApi.trend(id, period), [id, periodId]);
   const daily = useAsync(() => analyticsApi.dailyViews(id, period), [id, periodId]);
+  const posting = useAsync(() => analyticsApi.postingActivity(id, lastDays(HEATMAP_DAYS)), [id]);
+  const postingCounts = useMemo(
+    () => Object.fromEntries((posting.data ?? []).map((item) => [item.day, item.count])),
+    [posting.data],
+  );
   const growth = useAsync(() => analyticsApi.videoGrowth(id, period), [id, periodId]);
-  const top = useAsync(() => analyticsApi.videos({ channel_id: id, period, sort: 'views', limit: 6 }), [id, periodId]);
+  const top = useAsync(() => analyticsApi.videos({ channel_id: id, period, sort: topSort, limit: 6 }), [id, periodId, topSort]);
+  const videosAll = useAsync(
+    () => analyticsApi.videoPage({ channel_id: id, period, sort: 'posted', limit: 200 }),
+    [id, periodId],
+  );
+  const facts = useMemo(() => (videosAll.data ? channelFacts(videosAll.data.items) : null), [videosAll.data]);
   const runs = useAsync(
     () => (canReadSync ? syncApi.runs({ channel_id: id, limit: 10 }) : Promise.resolve([])),
     [id, canReadSync],
@@ -97,7 +139,9 @@ export function ChannelDetailPage() {
     trend.reload();
     daily.reload();
     growth.reload();
+    posting.reload();
     top.reload();
+    videosAll.reload();
     runs.reload();
   };
 
@@ -142,6 +186,32 @@ export function ChannelDetailPage() {
   const points = trend.data ?? [];
   const latest = points.length > 0 ? points[points.length - 1] : null;
   const data = metrics.data;
+  const profile: Profile | null = latest
+    ? { followers: latest.followers, totalLikes: latest.total_likes, videoCount: latest.video_count }
+    : null;
+  const hasCurve = growth.data && growth.data.length > 0 ? growth.data.some((video) => video.curve.length > 1) : undefined;
+  const trendSeries = points.map((point) => ({ label: dayLabel(point.day), value: point[metric] }));
+  const trendShown =
+    mode === 'change' ? trendSeries.slice(1).map((point, index) => ({ ...point, value: point.value - trendSeries[index].value })) : trendSeries;
+  const metricLabel = METRICS.find((item) => item.id === metric)?.label.toLowerCase();
+
+  const withVideos = (skeleton: string, render: (videos: VideoRecord[]) => ReactNode): ReactNode => {
+    if (videosAll.error) {
+      return (
+        <EmptyState
+          icon={LineChart}
+          title="Không tải được danh sách video"
+          description={errorMessage(videosAll.error)}
+          action={<Button variant="secondary" onClick={videosAll.reload}>Thử lại</Button>}
+        />
+      );
+    }
+    if (!videosAll.data) return <Skeleton className={skeleton} />;
+    if (videosAll.data.items.length === 0) {
+      return <EmptyState icon={Clapperboard} title="Chưa có video" description="Đồng bộ kênh để lấy video và số liệu của lần đầu tiên." />;
+    }
+    return render(videosAll.data.items);
+  };
   const kpis: Kpi[] | undefined = data
     ? [
         {
@@ -222,123 +292,226 @@ export function ChannelDetailPage() {
       </div>
 
       <div className="flex flex-col gap-6">
-        {metrics.error ? (
-          <FormError message={errorMessage(metrics.error)} />
-        ) : (
-          <KpiRow items={kpis} />
-        )}
+        <DataReadiness syncDays={trend.data ? trend.data.length : undefined} videoCount={videosAll.data?.total} hasCurve={hasCurve} />
 
-        <Widget
-          title="Xu hướng"
-          actions={
-            <span className="flex gap-1 pr-1">
-              {METRICS.map((item) => (
-                <Button
-                  key={item.id}
-                  size="sm"
-                  variant={metric === item.id ? 'accent' : 'ghost'}
-                  aria-pressed={metric === item.id}
-                  onClick={() => setMetric(item.id)}
-                >
-                  {item.label}
-                </Button>
+        {metrics.error ? <FormError message={errorMessage(metrics.error)} /> : <KpiRow items={kpis} />}
+
+        <Tabs tabs={TABS} value={tab} onChange={setTab} label="Nhóm biểu đồ của kênh" />
+
+        {tab === 'state' ? (
+          <div role="tabpanel" id="panel-state" aria-labelledby="tab-state" className="flex flex-col gap-6">
+            <MetricGrid data={data} facts={facts} profile={profile} />
+
+            <Widget title="Hiệu quả từng video" actions={<NeedsBadge kind="single" />} bodyClassName="p-4">
+              {withVideos('h-[380px]', (videos) => (
+                <VideoScatter videos={videos} />
               ))}
-            </span>
-          }
-          bodyClassName="p-4"
-        >
-          {!trend.data && trend.loading ? (
-            <Skeleton className="h-[220px]" />
-          ) : trend.error ? (
-            <EmptyState
-              icon={LineChart}
-              title="Không tải được xu hướng"
-              description={errorMessage(trend.error)}
-              action={<Button variant="secondary" onClick={trend.reload}>Thử lại</Button>}
-            />
-          ) : points.length === 0 ? (
-            <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Đồng bộ kênh để có số liệu theo ngày." />
-          ) : (
-            <TrendChart
-              points={points.map((point) => ({ label: dayLabel(point.day), value: point[metric] }))}
-              ariaLabel={`Biểu đồ ${METRICS.find((item) => item.id === metric)?.label.toLowerCase()} ${periodLabel(period)}`}
-              format={full}
-            />
-          )}
-        </Widget>
+            </Widget>
 
-        <Widget title="Lượt xem theo ngày" bodyClassName="p-4">
-          {!daily.data && daily.loading ? (
-            <Skeleton className="h-[220px]" />
-          ) : daily.error ? (
-            <EmptyState
-              icon={LineChart}
-              title="Không tải được lượt xem theo ngày"
-              description={errorMessage(daily.error)}
-              action={<Button variant="secondary" onClick={daily.reload}>Thử lại</Button>}
-            />
-          ) : !daily.data || daily.data.every((point) => point.views === 0) ? (
-            <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Cần ít nhất hai lần đồng bộ để tính lượt xem mỗi ngày." />
-          ) : (
-            <TrendChart
-              points={daily.data.map((point) => ({ label: dayLabel(point.day), value: point.views }))}
-              ariaLabel={`Biểu đồ lượt xem theo ngày ${periodLabel(period)}`}
-              format={full}
-            />
-          )}
-        </Widget>
-
-        <Widget title="Tăng trưởng video" bodyClassName="p-4">
-          {!growth.data && growth.loading ? (
-            <Skeleton className="h-[240px]" />
-          ) : growth.error ? (
-            <EmptyState
-              icon={LineChart}
-              title="Không tải được tăng trưởng video"
-              description={errorMessage(growth.error)}
-              action={<Button variant="secondary" onClick={growth.reload}>Thử lại</Button>}
-            />
-          ) : !growth.data || growth.data.length === 0 ? (
-            <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Chưa có video đăng trong kỳ này có số liệu." />
-          ) : (
-            <div className="flex flex-col gap-4">
-              <CompareChart
-                series={growth.data.map((video, index) => ({
-                  name: video.caption.slice(0, 24) || video.platform_video_id,
-                  ...seriesStyle(index),
-                  values: Object.fromEntries(video.curve.map((point) => [String(point.age_days), point.views])),
-                }))}
-                days={Array.from(new Set(growth.data.flatMap((video) => video.curve.map((point) => String(point.age_days)))))
-                  .sort((a, b) => Number(a) - Number(b))}
-                labelOf={(key) => `Ngày ${key}`}
-                ariaLabel="Đường tăng trưởng lượt xem của các video theo số ngày sau khi đăng"
-                format={full}
-              />
-              <DataTable caption="Lượt xem video sau 24 và 72 giờ" columns={growthColumns} rows={growth.data} rowKey={(v) => v.video_id} />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Widget title="Phân bố lượt xem" actions={<NeedsBadge kind="single" />} bodyClassName="p-4">
+                {withVideos('h-[300px]', (videos) => (
+                  <ViewsDistribution videos={videos} />
+                ))}
+              </Widget>
+              <Widget title="Cơ cấu tương tác" actions={<NeedsBadge kind="single" />} bodyClassName="p-4">
+                {data ? (
+                  <EngagementMix
+                    likes={data.current.total_likes}
+                    comments={data.current.total_comments}
+                    shares={data.current.total_shares}
+                    saves={facts?.saves ?? null}
+                    views={data.current.total_views}
+                  />
+                ) : (
+                  <Skeleton className="h-[300px]" />
+                )}
+              </Widget>
             </div>
-          )}
-        </Widget>
 
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-base font-bold">Video nổi bật</h2>
-            <Link to="/videos" className="text-sm font-medium text-blue underline-offset-4 hover:underline hover:decoration-blue">
-              Xem tất cả video
-            </Link>
+            <Widget title="Thời điểm đăng hiệu quả" actions={<NeedsBadge kind="single" />} bodyClassName="p-4">
+              {withVideos('h-[220px]', (videos) => (
+                <PostingTimeHeatmap videos={videos} />
+              ))}
+            </Widget>
+
+            <Widget title="Tần suất đăng video" actions={<NeedsBadge kind="single" />} bodyClassName="p-4">
+              {!posting.data && posting.loading ? (
+                <Skeleton className="h-[150px]" />
+              ) : posting.error ? (
+                <EmptyState
+                  icon={LineChart}
+                  title="Không tải được tần suất đăng video"
+                  description={errorMessage(posting.error)}
+                  action={<Button variant="secondary" onClick={posting.reload}>Thử lại</Button>}
+                />
+              ) : (
+                <ActivityHeatmap
+                  counts={postingCounts}
+                  days={HEATMAP_DAYS}
+                  ariaLabel={`Biểu đồ tần suất đăng video ${HEATMAP_DAYS} ngày qua`}
+                />
+              )}
+            </Widget>
+
+            {videosAll.data && videosAll.data.total > videosAll.data.items.length ? (
+              <p className="text-[13px] text-muted">
+                Các biểu đồ video dựa trên {videosAll.data.items.length} video mới nhất trong tổng số {full(videosAll.data.total)} video của kỳ này.
+              </p>
+            ) : null}
           </div>
-          <VideoGrid videos={top.data} />
-        </section>
+        ) : null}
 
-        {canReadSync ? (
-          <Widget title="Lịch sử đồng bộ">
-            {!runs.data && runs.loading ? (
-              <Skeleton className="h-[160px]" />
-            ) : runs.data && runs.data.length === 0 ? (
-              <EmptyState icon={RefreshCw} title="Chưa có lần đồng bộ nào" description="Bấm Đồng bộ ngay để lấy dữ liệu đầu tiên." />
-            ) : (
-              <DataTable caption="Lịch sử đồng bộ của kênh" columns={runColumns} rows={runs.data ?? []} rowKey={(r) => r.id} />
-            )}
-          </Widget>
+        {tab === 'trend' ? (
+          <div role="tabpanel" id="panel-trend" aria-labelledby="tab-trend" className="flex flex-col gap-6">
+            <Widget
+              title="Xu hướng kênh"
+              actions={
+                <span className="flex flex-wrap items-center gap-1 pr-1">
+                  <NeedsBadge kind="multi" />
+                  {METRICS.map((item) => (
+                    <Button
+                      key={item.id}
+                      size="sm"
+                      variant={metric === item.id ? 'accent' : 'ghost'}
+                      aria-pressed={metric === item.id}
+                      onClick={() => setMetric(item.id)}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </span>
+              }
+              bodyClassName="flex flex-col gap-3 p-4"
+            >
+              <div role="group" aria-label="Cách hiển thị" className="flex gap-1.5">
+                <Chip active={mode === 'total'} onClick={() => setMode('total')}>
+                  Giá trị theo ngày
+                </Chip>
+                <Chip active={mode === 'change'} onClick={() => setMode('change')}>
+                  Thay đổi so với ngày trước
+                </Chip>
+              </div>
+              {!trend.data && trend.loading ? (
+                <Skeleton className="h-[220px]" />
+              ) : trend.error ? (
+                <EmptyState
+                  icon={LineChart}
+                  title="Không tải được xu hướng"
+                  description={errorMessage(trend.error)}
+                  action={<Button variant="secondary" onClick={trend.reload}>Thử lại</Button>}
+                />
+              ) : points.length === 0 ? (
+                <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Đồng bộ kênh để có số liệu theo ngày." />
+              ) : trendShown.length === 0 ? (
+                <EmptyState icon={LineChart} title="Cần thêm dữ liệu" description="Thay đổi theo ngày cần số liệu của ít nhất hai ngày." />
+              ) : (
+                <TrendChart
+                  points={trendShown}
+                  ariaLabel={`Biểu đồ ${metricLabel} ${periodLabel(period)}`}
+                  format={mode === 'change' ? signedCount : full}
+                  showChange={mode === 'total'}
+                  zeroBased={mode === 'change'}
+                  xTitle="Ngày"
+                  yTitle={mode === 'change' ? `${metricTitle(metric)} (thay đổi mỗi ngày)` : metricTitle(metric)}
+                />
+              )}
+            </Widget>
+
+            <Widget title="Lượt xem theo ngày" actions={<NeedsBadge kind="multi" />} bodyClassName="p-4">
+              {!daily.data && daily.loading ? (
+                <Skeleton className="h-[220px]" />
+              ) : daily.error ? (
+                <EmptyState
+                  icon={LineChart}
+                  title="Không tải được lượt xem theo ngày"
+                  description={errorMessage(daily.error)}
+                  action={<Button variant="secondary" onClick={daily.reload}>Thử lại</Button>}
+                />
+              ) : !daily.data || daily.data.every((point) => point.views === 0) ? (
+                <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Cần ít nhất hai lần đồng bộ để tính lượt xem mỗi ngày." />
+              ) : (
+                <TrendChart
+                  points={daily.data.map((point) => ({ label: dayLabel(point.day), value: point.views }))}
+                  ariaLabel={`Biểu đồ lượt xem theo ngày ${periodLabel(period)}`}
+                  format={full}
+                  zeroBased
+                  xTitle="Ngày"
+                  yTitle="Lượt xem phát sinh trong ngày"
+                />
+              )}
+            </Widget>
+
+            <Widget title="Tăng trưởng video" actions={<NeedsBadge kind="multi" />} bodyClassName="p-4">
+              {!growth.data && growth.loading ? (
+                <Skeleton className="h-[240px]" />
+              ) : growth.error ? (
+                <EmptyState
+                  icon={LineChart}
+                  title="Không tải được tăng trưởng video"
+                  description={errorMessage(growth.error)}
+                  action={<Button variant="secondary" onClick={growth.reload}>Thử lại</Button>}
+                />
+              ) : !growth.data || growth.data.length === 0 ? (
+                <EmptyState icon={LineChart} title="Chưa có dữ liệu" description="Chưa có video đăng trong kỳ này có số liệu." />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <CompareChart
+                    series={growth.data.map((video, index) => ({
+                      name: video.caption.slice(0, 24) || video.platform_video_id,
+                      ...seriesStyle(index),
+                      values: Object.fromEntries(video.curve.map((point) => [String(point.age_days), point.views])),
+                    }))}
+                    days={Array.from(new Set(growth.data.flatMap((video) => video.curve.map((point) => String(point.age_days)))))
+                      .sort((a, b) => Number(a) - Number(b))}
+                    labelOf={(key) => `Ngày ${key}`}
+                    ariaLabel="Đường tăng trưởng lượt xem của các video theo số ngày sau khi đăng"
+                    format={full}
+                    zeroBased
+                    xTitle="Số ngày sau khi đăng"
+                    yTitle="Lượt xem tích luỹ"
+                    xValue={Number}
+                    singlePointHint="Mỗi video mới có một lần ghi nhận lượt xem. Cần đồng bộ thêm vào các ngày khác nhau để thấy đường tăng trưởng."
+                  />
+                  <DataTable caption="Lượt xem video sau 24 và 72 giờ" columns={growthColumns} rows={growth.data} rowKey={(v) => v.video_id} />
+                </div>
+              )}
+            </Widget>
+          </div>
+        ) : null}
+
+        {tab === 'videos' ? (
+          <div role="tabpanel" id="panel-videos" aria-labelledby="tab-videos" className="flex flex-col gap-6">
+            <section>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-bold">Video nổi bật</h2>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[13px] text-muted">Xếp theo</span>
+                  {TOP_SORTS.map((item) => (
+                    <Chip key={item.id} active={topSort === item.id} onClick={() => setTopSort(item.id)}>
+                      {item.label}
+                    </Chip>
+                  ))}
+                  <Link to="/videos" className="ml-2 text-sm font-medium text-blue underline-offset-4 hover:underline hover:decoration-blue">
+                    Xem tất cả video
+                  </Link>
+                </div>
+              </div>
+              <VideoGrid videos={top.data} />
+            </section>
+
+            {canReadSync ? (
+              <Widget title="Lịch sử đồng bộ">
+                {!runs.data && runs.loading ? (
+                  <Skeleton className="h-[160px]" />
+                ) : runs.data && runs.data.length === 0 ? (
+                  <EmptyState icon={RefreshCw} title="Chưa có lần đồng bộ nào" description="Bấm Đồng bộ ngay để lấy dữ liệu đầu tiên." />
+                ) : (
+                  <DataTable caption="Lịch sử đồng bộ của kênh" columns={runColumns} rows={runs.data ?? []} rowKey={(r) => r.id} />
+                )}
+              </Widget>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </>

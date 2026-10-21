@@ -9,6 +9,7 @@ from vinichannels.application.ports.repositories import (
     NotificationRepository,
     PartnerRepository,
     ProviderConfigRepository,
+    PushSubscriptionRepository,
     ScoringSettingsRepository,
     SnapshotRepository,
     SyncRunRepository,
@@ -29,6 +30,7 @@ class UnitOfWork(Protocol):
     scoring: ScoringSettingsRepository
     audit: AuditLogRepository
     notifications: NotificationRepository
+    push_subscriptions: PushSubscriptionRepository
 
     async def __aenter__(self) -> Self: ...
 

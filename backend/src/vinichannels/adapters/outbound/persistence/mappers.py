@@ -3,6 +3,7 @@ import json
 from vinichannels.adapters.outbound.persistence.models import (
     AuditLogModel,
     NotificationModel,
+    PushSubscriptionModel,
     ChannelCredentialModel,
     ChannelModel,
     ChannelSnapshotModel,
@@ -22,7 +23,11 @@ from vinichannels.domain.channels.value_objects import ChannelStatus, Connection
 from vinichannels.domain.content.entities import Video
 from vinichannels.domain.content.snapshots import ChannelSnapshot, VideoSnapshot
 from vinichannels.domain.identity.entities import Role, User
-from vinichannels.domain.notifications.entities import Notification, NotificationKind
+from vinichannels.domain.notifications.entities import (
+    Notification,
+    NotificationKind,
+    PushSubscription,
+)
 from vinichannels.domain.partners.entities import Partner
 from vinichannels.domain.shared.ids import ChannelId, PartnerId, SyncRunId, UserId, VideoId
 from vinichannels.domain.syncing.entities import SyncRun, SyncStatus, SyncTrigger
@@ -325,4 +330,26 @@ def notification_to_domain(model: NotificationModel) -> Notification:
         message=model.message,
         created_at=model.created_at,
         read_at=model.read_at,
+    )
+
+
+def push_subscription_to_model(item: PushSubscription) -> PushSubscriptionModel:
+    return PushSubscriptionModel(
+        id=item.id,
+        user_id=item.user_id,
+        endpoint=item.endpoint,
+        p256dh=item.p256dh,
+        auth=item.auth,
+        created_at=item.created_at,
+    )
+
+
+def push_subscription_to_domain(model: PushSubscriptionModel) -> PushSubscription:
+    return PushSubscription(
+        id=model.id,
+        user_id=UserId(model.user_id),
+        endpoint=model.endpoint,
+        p256dh=model.p256dh,
+        auth=model.auth,
+        created_at=model.created_at,
     )

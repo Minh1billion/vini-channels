@@ -23,6 +23,18 @@ class Settings:
     admin_password: str | None = None
     scheduler_interval_sec: float = 30.0
     scheduler_concurrency: int = 3
+    sync_lookback_days: int = 30
+    sync_max_videos: int = 100
+    sync_max_pages: int = 10
+    backfill_max_pages: int = 100
+    minio_endpoint: str | None = None
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "vini-thumbnails"
+    minio_secure: bool = False
+    vapid_public_key: str | None = None
+    vapid_private_key: str | None = None
+    vapid_subject: str = "mailto:admin@vini.local"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -49,4 +61,16 @@ class Settings:
             scheduler_concurrency=int(
                 env.get("VINI_SCHEDULER_CONCURRENCY", defaults.scheduler_concurrency)
             ),
+            sync_lookback_days=int(env.get("VINI_SYNC_LOOKBACK_DAYS", defaults.sync_lookback_days)),
+            sync_max_videos=int(env.get("VINI_SYNC_MAX_VIDEOS", defaults.sync_max_videos)),
+            sync_max_pages=int(env.get("VINI_SYNC_MAX_PAGES", defaults.sync_max_pages)),
+            backfill_max_pages=int(env.get("VINI_BACKFILL_MAX_PAGES", defaults.backfill_max_pages)),
+            minio_endpoint=env.get("VINI_MINIO_ENDPOINT") or None,
+            minio_access_key=env.get("VINI_MINIO_ACCESS_KEY", defaults.minio_access_key),
+            minio_secret_key=env.get("VINI_MINIO_SECRET_KEY", defaults.minio_secret_key),
+            minio_bucket=env.get("VINI_MINIO_BUCKET") or defaults.minio_bucket,
+            minio_secure=_flag(env.get("VINI_MINIO_SECURE")),
+            vapid_public_key=env.get("VINI_VAPID_PUBLIC_KEY") or None,
+            vapid_private_key=env.get("VINI_VAPID_PRIVATE_KEY") or None,
+            vapid_subject=env.get("VINI_VAPID_SUBJECT") or defaults.vapid_subject,
         )

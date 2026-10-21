@@ -23,3 +23,4 @@ export { ChipSelectField } from './ChipSelectField';
 export { TagInputField } from './TagInputField';
 export { OptionCardGroup, type Option } from './OptionCardGroup';
 export { ViewToggle } from './ViewToggle';
+export { Pagination } from './Pagination';
